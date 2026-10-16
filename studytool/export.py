@@ -1,9 +1,13 @@
 """CSV export. OWNER: agent D."""
 import csv
+import hashlib
+import html
 import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+import genanki
 
 from studytool import config, db
 
@@ -51,6 +55,42 @@ def export_csv(conn: sqlite3.Connection, deck_id: int) -> Path:
         writer.writerow(["front", "back"])
         for r in rows:
             writer.writerow([r["front"], r["back"]])
+
+    card_ids_and_revisions = [{"id": r["id"], "revision": r["revision"]} for r in rows]
+    with db.tx(conn):
+        conn.execute(
+            "INSERT INTO exports (deck_id, local_path, card_ids_and_revisions_json) VALUES (?, ?, ?)",
+            (deck_id, str(out_path), json.dumps(card_ids_and_revisions)),
+        )
+
+    return out_path
+
+
+def export_apkg(conn: sqlite3.Connection, deck_id: int) -> Path:
+    """Write approved cards only as an Anki deck file (.apkg) of Basic notes; same rules and
+    order as export_csv. Each note's id is fixed per card, so importing a newer export of the
+    same deck updates those notes instead of adding duplicates. Returns the file path."""
+    rows = _ordered_approved_cards(conn, deck_id)
+    if not rows:
+        raise ValueError("No approved cards to export for this deck.")
+    for r in rows:
+        if not r["front"].strip() or not r["back"].strip():
+            raise ValueError(f"Card {r['id']} has a blank front or back; fix it before exporting.")
+
+    title = conn.execute("SELECT title FROM decks WHERE id = ?", (deck_id,)).fetchone()["title"]
+    # Anki needs a fixed numeric deck id; derive it from our deck id so re-exports land in the same deck.
+    anki_deck_id = int(hashlib.sha256(f"studytool-deck-{deck_id}".encode()).hexdigest(), 16) % (1 << 30) + (1 << 30)
+    deck = genanki.Deck(anki_deck_id, title)
+    for r in rows:
+        # Anki fields are HTML: escape <, > and & (quotes are fine in field text) and keep line breaks.
+        fields = [html.escape(s, quote=False).replace("\n", "<br>") for s in (r["front"], r["back"])]
+        deck.add_note(genanki.Note(model=genanki.BASIC_MODEL, fields=fields,
+                                   guid=genanki.guid_for("studytool", deck_id, r["id"])))
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    config.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = config.EXPORT_DIR / f"deck{deck_id}_{timestamp}.apkg"
+    genanki.Package(deck).write_to_file(out_path)
 
     card_ids_and_revisions = [{"id": r["id"], "revision": r["revision"]} for r in rows]
     with db.tx(conn):

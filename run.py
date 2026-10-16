@@ -1,8 +1,11 @@
 """Local launcher. Run with `uv run python run.py`.
 
 Applies pending SQLite migrations once, then starts exactly one background
-worker (`python -m studytool.worker`) and the Streamlit app as subprocesses.
+worker (`python -m studytool.worker`) and the web app as subprocesses.
 If either process exits, the other is stopped too. Ctrl+C stops both.
+
+`uv run python run.py --streamlit` starts the old Streamlit screen instead (kept until the
+new web app is confirmed; it will be removed).
 """
 import os
 import subprocess
@@ -17,22 +20,25 @@ def main() -> None:
     db.migrate(conn)
     conn.close()
 
-    if not os.environ.get("GEMINI_API_KEY"):
-        print("Warning: GEMINI_API_KEY is not set. AI calls will fail until it is configured.")
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        print("Warning: DEEPSEEK_API_KEY is not set. AI calls will fail until it is configured.")
+
+    if "--streamlit" in sys.argv:
+        ui_cmd = [sys.executable, "-m", "streamlit", "run", "app.py",
+                  "--server.address", config.HOST, "--server.port", str(config.PORT), "--server.headless", "true"]
+    else:
+        ui_cmd = [sys.executable, "-m", "uvicorn", "studytool.web:app",
+                  "--host", config.HOST, "--port", str(config.PORT), "--log-level", "warning"]
 
     worker_proc = subprocess.Popen([sys.executable, "-m", "studytool.worker"])
-    streamlit_proc = subprocess.Popen([
-        sys.executable, "-m", "streamlit", "run", "app.py",
-        "--server.address", config.HOST,
-        "--server.port", str(config.PORT),
-        "--server.headless", "true",
-    ])
+    ui_proc = subprocess.Popen(ui_cmd)
+    print(f"Open http://{config.HOST}:{config.PORT} in your browser. Press Ctrl+C to stop.", flush=True)
 
     def _stop_both() -> None:
-        for proc in (worker_proc, streamlit_proc):
+        for proc in (worker_proc, ui_proc):
             if proc.poll() is None:
                 proc.terminate()
-        for proc in (worker_proc, streamlit_proc):
+        for proc in (worker_proc, ui_proc):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -41,10 +47,10 @@ def main() -> None:
     try:
         while True:
             if worker_proc.poll() is not None:
-                print(f"Worker exited (code {worker_proc.returncode}); stopping Streamlit.")
+                print(f"Worker exited (code {worker_proc.returncode}); stopping the web app.")
                 break
-            if streamlit_proc.poll() is not None:
-                print(f"Streamlit exited (code {streamlit_proc.returncode}); stopping worker.")
+            if ui_proc.poll() is not None:
+                print(f"Web app exited (code {ui_proc.returncode}); stopping worker.")
                 break
             time.sleep(1)
     except KeyboardInterrupt:

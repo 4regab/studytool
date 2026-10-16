@@ -1,0 +1,53 @@
+/* Tailwind input. After changing templates or app.js, rebuild app.css with:
+   npm install && npm run build:css
+   app.css is committed, so running the app needs no Node.
+   Look: Notion-like. Off-black text, warm grays, thin lines, no shadows, one blue accent. */
+@import "tailwindcss";
+@source "../templates";
+@source "./app.js";
+
+@theme {
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --color-ink: #37352f;
+  --color-muted: #787774;
+  --color-faint: #a5a29a;
+  --color-line: #e9e9e7;
+  --color-hover: #f1f1ef;
+  --color-wash: #f7f7f5;
+  --color-accent: #2383e2;
+  --color-accent-dark: #0b6bcb;
+}
+
+@layer base {
+  body { @apply bg-white font-sans text-[15px] leading-relaxed text-ink antialiased; }
+  ::selection { background: rgb(35 131 226 / 0.2); }
+  :focus-visible { outline: 2px solid rgb(35 131 226 / 0.5); outline-offset: 2px; border-radius: 4px; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-ink
+      transition-colors select-none hover:bg-hover disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-outline { @apply border border-line; }
+  .btn-primary { @apply bg-accent text-white hover:bg-accent-dark; }
+  .btn-sm { @apply px-2 py-1 text-[13px]; }
+  .field {
+    @apply block w-full rounded-md border border-line bg-white px-2.5 py-1.5 text-sm text-ink
+      placeholder:text-faint hover:border-faint focus:border-accent focus:outline-none;
+  }
+  /* Borderless text that looks like page content until hovered or focused. */
+  .plain {
+    @apply block w-full resize-none rounded-md bg-transparent px-1.5 py-1 -mx-1.5 text-ink
+      placeholder:text-faint hover:bg-wash focus:bg-wash focus:outline-none;
+  }
+  .label { @apply text-sm text-muted; }
+  .tag { @apply inline-flex items-center rounded px-1.5 py-px text-[12px] leading-5 whitespace-nowrap; }
+  .tag-gray { @apply bg-[#e3e2e0] text-[#32302c]; }
+  .tag-orange { @apply bg-[#fadec9] text-[#73400e]; }
+  .tag-green { @apply bg-[#dbeddb] text-[#1c3829]; }
+  .tag-red { @apply bg-[#ffe2dd] text-[#5d1715]; }
+  .tag-blue { @apply bg-[#d3e5ef] text-[#183347]; }
+  .divider { @apply border-t border-line; }
+  .kbd { @apply rounded border border-line px-1 font-mono text-[11px] text-muted; }
+}

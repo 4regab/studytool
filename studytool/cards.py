@@ -1,5 +1,4 @@
 """Review actions on cards. OWNER: agent D. Every change is persisted in SQLite."""
-import json
 import sqlite3
 
 from studytool import db
@@ -37,39 +36,19 @@ def edit_card(conn: sqlite3.Connection, card_id: int, front: str, back: str) -> 
 
 
 def set_status(conn: sqlite3.Connection, card_id: int, status: str, verified_note: str | None = None) -> None:
-    """approve/reject/draft. Approving needs non-blank fields, and a verified_note when the
-    card's source item has an issue_reason or the card has validation flags."""
+    """approve/reject/draft. Approving needs non-blank fields. Approving a flagged card is the
+    user's own check; the warnings are shown on the review screen, no note is required."""
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status: {status!r}. Must be one of {sorted(VALID_STATUSES)}.")
 
-    row = conn.execute(
-        "SELECT c.front, c.back, c.validation_flags_json, c.review_reason, c.duplicate_of, "
-        "si.issue_reason, si.answer_source "
-        "FROM cards c JOIN source_items si ON si.id = c.source_item_id WHERE c.id = ?",
-        (card_id,),
-    ).fetchone()
+    row = conn.execute("SELECT front, back FROM cards WHERE id = ?", (card_id,)).fetchone()
     if row is None:
         raise ValueError(f"Card {card_id} not found.")
 
     note = (verified_note or "").strip()
 
-    if status == "approved":
-        if not row["front"].strip() or not row["back"].strip():
-            raise ValueError("Cannot approve a card with a blank front or back.")
-
-        flags = json.loads(row["validation_flags_json"] or "[]")
-        needs_note = bool(
-            flags
-            or row["review_reason"]
-            or row["duplicate_of"]
-            or row["issue_reason"]
-            or row["answer_source"] == "conflict"
-        )
-        if needs_note and not note:
-            raise ValueError(
-                "This card needs review (validation flags, a review reason, a duplicate link, "
-                "or a source issue). Add a verified note before approving."
-            )
+    if status == "approved" and (not row["front"].strip() or not row["back"].strip()):
+        raise ValueError("Cannot approve a card with a blank front or back.")
 
     with db.tx(conn):
         conn.execute(

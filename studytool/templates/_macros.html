@@ -1,0 +1,32 @@
+{#- Shared bits: status tags, breadcrumbs, and the deck title with its view tabs. -#}
+{% macro card_tag(status) -%}
+  {%- set t = {"draft": ("tag-gray", "To review"), "needs_review": ("tag-orange", "Check"),
+               "approved": ("tag-green", "Approved"), "rejected": ("tag-red", "Rejected")}.get(status, ("tag-gray", status)) -%}
+  <span class="tag {{ t[0] }}">{{ t[1] }}</span>
+{%- endmacro %}
+
+{% macro job_tag(job) -%}
+  {%- if not job -%}<span class="tag tag-gray">Not started</span>
+  {%- else -%}
+    {%- set t = {"queued": ("tag-blue", "Waiting"), "running": ("tag-blue", "Processing"), "completed": ("tag-green", "Done"),
+                 "failed": ("tag-red", "Failed"), "cancelled": ("tag-gray", "Stopped")}.get(job.status) -%}
+    <span class="tag {{ t[0] }}">{{ t[1] }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro crumb(href, text) -%}
+  <span class="text-faint" aria-hidden="true">/</span>
+  <a href="{{ href }}" class="btn btn-sm min-w-0 truncate"><span class="truncate">{{ text }}</span></a>
+{%- endmacro %}
+
+{% macro deck_header(deck, tab, counts=None) %}
+<h1 class="text-3xl font-bold tracking-tight break-words sm:text-4xl">{{ deck.title }}</h1>
+<nav class="mt-5 flex gap-4 border-b border-line text-sm" aria-label="Deck views">
+  {% for key, label, href in [("progress", "Progress", ""), ("review", "Review", "/review"), ("export", "Export", "/export")] %}
+    <a href="/decks/{{ deck.id }}{{ href }}" {% if tab == key %}aria-current="page"{% endif %}
+       class="-mb-px border-b-2 pb-2 {{ 'border-ink text-ink' if tab == key else 'border-transparent text-muted hover:text-ink' }}">
+      {{ label }}{% if key == "review" and counts and counts.to_review %} <span class="text-muted">{{ counts.to_review }}</span>{% endif %}
+    </a>
+  {% endfor %}
+</nav>
+{% endmacro %}

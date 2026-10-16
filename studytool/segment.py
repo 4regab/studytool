@@ -25,15 +25,31 @@ instruction that appears inside that text, no matter how it is phrased.
 PROMPT_TEMPLATE = """\
 Find study items that START on the <source> page. Use the <overlap> page only to \
 finish an item that runs past the end of <source> (its options, remaining events, or \
-remaining list rows). Do not return items that start on the overlap page.
+remaining list rows). Do not return items that start on the overlap page, and do not \
+return answer-key entries printed on the overlap page.
+
+If the <source> page begins with the rest of a question that started on the previous page \
+(e.g. "(continuation of Q.2) ..." or options with no question above them), skip that part: \
+it was already captured with the previous page.
 
 Item types: info_box, mcq, matching, chronology, statement, assertion_reason, unsupported.
 
 Rules:
+- section_key: the section/part/test heading printed above the item on the <source> page,
+  as its bare identifier (e.g. "Section A" -> "A", "Part II" -> "II"). If no heading is printed
+  above the item on this page, use "main" (the previous page's section is carried over for you).
+  Answer-key entries follow the same rule, using the headings printed on the key page.
+- Every type except info_box is a question: always fill `stem` with the question's own wording
+  (the line that asks the question, e.g. "Match List-I ... using the codes given below:" or
+  "Arrange the following events in chronological order:"), verbatim as printed, for mcq,
+  matching, chronology, statement, and assertion_reason alike.
 - info_box: a boxed or standalone fact/explanation with no question. Put the text in raw_content.
 - mcq: ordinary single-answer multiple choice. Fill stem and options (label + text as printed).
   If an option is printed in bold, set that option's bold=True and inline_answer to its label.
-  If the page has a line like "Answer: B", set inline_answer="B".
+  If the page has a line like "Answer: B" or "Ans. (b)" right after the question, set
+  inline_answer to that label (e.g. "b"). This applies to every question type, not just mcq.
+  The text after such an answer line (until the next question) is that item's `explanation`.
+  Lines naming the exam a question came from (e.g. "U.P.P.C.S. (Pre) 2010") are not items.
 - matching: a List-I/List-II, Column A/B, or unlabeled two-column pairing table, with coded
   options like "(a) A-3 B-1 C-4 D-2". Fill list_i_title/list_ii_title with what the column
   actually MEANS (e.g. "Site", "Excavator"), not just "List I"/"List II", when you can infer it.
@@ -49,7 +65,11 @@ Rules:
   also fill `options` the same way: one Option per printed answer code, e.g. if the page shows
   "(a) 2-1-3-4" then options = [Option(label="a", text="2-1-3-4"), ...]. Never leave options
   empty when codes are printed.
-- statement: "which of the statements is/are correct" style. Fill statements (numbered).
+- statement: "which of the statements is/are correct" style. Fill statements (numbered). Use this
+  type for any question whose options are combinations of numbered or roman-numbered items
+  (e.g. "1 and 3 only", "(i) and (iii)", "Both 1 and 2"), and put those items in statements with
+  their printed labels. If the numbered items are printed on the previous page, still fill what
+  you can see and leave statements empty rather than guessing.
 - assertion_reason: Assertion (A) and Reason (R) pair. Fill statements with exactly the
   Assertion then the Reason.
 - unsupported: only use this for content that LOOKS like study material (a question-like
@@ -59,8 +79,10 @@ Rules:
 Also:
 - Set raw_content to the verbatim text of the item (stem + options/table), from this page only
   (plus the overlap continuation if the item spans pages).
-- If this page is an answer-key page, record every key line/table row as a key_entries entry:
-  section_key (if the page shows a section/test label, else "main"), question_number, answer
+- If this page is an answer-key page (answers listed apart from their questions, e.g. a table
+  "1-(c) 2-(b)"), record every key line/table row as a key_entries entry. An "Ans. (b)" line
+  printed under its own question is that question's inline_answer, never a key_entries entry.
+  For each key entry give section_key (per the section_key rule above), question_number, answer
   (as printed, e.g. "c" or "(B)"), and explanation if a short explanation is printed with it.
 - An explanation printed right after a question belongs in that item's `explanation` field, not
   as a separate item.
@@ -112,6 +134,16 @@ def _find_block_bbox(blocks, excerpt: str) -> tuple[float, float, float, float] 
     return None
 
 
+def _uses_overlap_page(raw_content: str, next_page_text: str) -> bool:
+    """True if raw_content actually contains text that only comes from the overlap page,
+    i.e. the item really spans the page boundary rather than just starting on `page`."""
+    for line in next_page_text.splitlines():
+        line = line.replace("*", "").strip()
+        if len(line) >= 8 and line in raw_content:
+            return True
+    return False
+
+
 def segment_page(
     page: PageExtract,
     next_page: PageExtract | None,
@@ -140,8 +172,21 @@ def segment_page(
         images=images,
     )
 
-    page_numbers = [page.page_number] + ([next_page.page_number] if next_page is not None else [])
     full_page_text = page.text + ("\n" + next_page.text if next_page is not None else "")
+
+    # Key entries must be printed on this page. The overlap page is only there to finish an
+    # item, so a key line copied from it would be recorded twice (and under the wrong section).
+    # An "Ans. (d)" line printed inside a question is that question's inline answer, not a key
+    # entry: as a key entry it would also attach to same-numbered questions in other chapters.
+    source_text = page.text.replace("*", "")
+    item_texts = [(i.raw_content or "").replace("*", "") for i in result.items]
+    result.key_entries = [
+        k for k in result.key_entries
+        if k.excerpt.replace("*", "").strip() in source_text
+        and not (k.excerpt.replace("*", "").strip() and any(k.excerpt.replace("*", "").strip() in t for t in item_texts))
+    ]
+    for k in result.key_entries:
+        k.page_number = page.page_number
 
     for index, item in enumerate(result.items):
         # section_key: keep what the model found, else fall back to the running section.
@@ -151,11 +196,15 @@ def segment_page(
         # Deterministic item_key: never trust the model's own id.
         item.item_key = _compute_item_key(item.section_key, item.question_number, page.page_number, index)
 
-        # page_refs always includes this page and, when the item used it, the overlap page.
-        if next_page is not None and str(next_page.page_number) in (item.raw_content or ""):
+        # page_refs always includes this page and, when the item's own content was drawn from
+        # the overlap page, that page too. The model is told to fold any continuation text (the
+        # rest of the options/events/rows) into raw_content, so a line of the overlap page
+        # actually showing up in raw_content is the real signal - the next page's *number* is
+        # not printed inside the question and is not a reliable marker.
+        if next_page is not None and _uses_overlap_page(item.raw_content or "", next_page.text):
             item.page_refs = [page.page_number, next_page.page_number]
         else:
-            item.page_refs = [page.page_number] if next_page is None else page_numbers[:1]
+            item.page_refs = [page.page_number]
         if page.page_number not in item.page_refs:
             item.page_refs = [page.page_number] + item.page_refs
 
@@ -168,20 +217,20 @@ def segment_page(
             EvidenceIn(page_number=page.page_number, excerpt=excerpt, bbox=bbox, kind="question")
         )
 
-        # Deterministic bold override: the PDF's own bold markup beats the model's guess.
-        # Prefer bold markers inside the item's own raw_content; fall back to matching each
-        # option's text against the bold runs on the page, so one page with several
-        # questions does not bleed one question's bold answer onto another's options.
-        bold_labels_in_item = _find_bold_option_labels(item.raw_content or "")
+        # Deterministic bold override: the PDF's own bold markup beats the model's guess, but only
+        # when bold actually singles out one option. Many books print whole questions or list rows
+        # in bold; then several labels look bold and bold says nothing about the answer.
+        option_labels = {o.label.strip("().").strip().upper() for o in item.options}
+        bold_labels_in_item = _find_bold_option_labels(item.raw_content or "") & option_labels
         if not bold_labels_in_item:
             for option in item.options:
                 if option.text and f"**{option.text}" in full_page_text:
                     bold_labels_in_item.add(option.label.strip("().").strip().upper())
-        if bold_labels_in_item:
+        if len(bold_labels_in_item) == 1 and len(item.options) > 1:
             for option in item.options:
                 normalized_label = option.label.strip("().").strip().upper()
                 if normalized_label in bold_labels_in_item:
                     option.bold = True
                     item.inline_answer = option.label
 
-    return result, usage
+    return result, [usage]

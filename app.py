@@ -118,14 +118,15 @@ def screen_documents(conn: sqlite3.Connection) -> None:
     doc = next(d for d in docs if d["id"] == selected_doc_id)
 
     st.subheader("Pages to process")
-    all_pages = st.checkbox("Use all pages as content", value=True, key="use_all_pages")
+    # Default to a small pilot range: processing a whole book costs real money (PRD 11).
+    all_pages = st.checkbox("Use all pages as content", value=False, key="use_all_pages")
     if all_pages:
         content_pages = list(range(1, doc["page_count"] + 1))
         st.caption(f"Content pages: 1-{doc['page_count']}")
     else:
         col1, col2 = st.columns(2)
         from_page = col1.number_input("From page", min_value=1, max_value=doc["page_count"], value=1, key="from_page")
-        to_page = col2.number_input("To page", min_value=1, max_value=doc["page_count"], value=doc["page_count"], key="to_page")
+        to_page = col2.number_input("To page", min_value=1, max_value=doc["page_count"], value=min(doc["page_count"], 5), key="to_page")
         content_pages = list(range(min(from_page, to_page), max(from_page, to_page) + 1))
 
     key_pages_text = st.text_input(
@@ -143,7 +144,7 @@ def screen_documents(conn: sqlite3.Connection) -> None:
 
     st.info(
         "The text (and page images for scanned pages) of the selected pages will be sent to "
-        "Google Gemini for processing. Consider a small pilot range first to check quality and cost."
+        "DeepSeek for processing. Consider a small pilot range first to check quality and cost."
     )
 
     # Guard against double submit: disable while a job for this deck's most recent run is active.
@@ -456,6 +457,15 @@ def screen_export(conn: sqlite3.Connection) -> None:
         st.caption("Source items by disposition")
         st.json(preview["by_disposition"])
 
+    if st.button("Export Anki deck (.apkg)", key="export_apkg_button", type="primary"):
+        ok3, path = safe_call(export.export_apkg, conn, selected_deck_id)
+        if ok3:
+            st.success(f"Exported to {path}")
+            st.download_button(
+                "Download Anki deck", data=Path(path).read_bytes(), file_name=Path(path).name,
+                mime="application/octet-stream", key="download_apkg",
+            )
+
     if st.button("Export CSV", key="export_button"):
         ok2, path = safe_call(export.export_csv, conn, selected_deck_id)
         if ok2:
@@ -466,7 +476,9 @@ def screen_export(conn: sqlite3.Connection) -> None:
             )
 
     st.info(
-        "In Anki: File > Import, choose the CSV, note type Basic, field separator Comma, "
+        "Anki deck: double-click the .apkg file (or File > Import in Anki). Importing a newer export "
+        "of the same deck updates its cards instead of duplicating them.\n\n"
+        "CSV: File > Import, choose the CSV, note type Basic, field separator Comma, "
         "map field 1 to Front and field 2 to Back, and skip the first row (the header). "
         "Turn 'Allow HTML' off."
     )

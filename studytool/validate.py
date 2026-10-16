@@ -8,7 +8,7 @@ _CODE_PATTERNS = [
     re.compile(r"^\(?[a-dA-D]\)?\.?$"),                              # "(c)", "C", "c."
     re.compile(r"^[A-D]{2,}$"),                                      # "BAC", "ACD"
     re.compile(r"^[A-D]-?\d( ?,? ?[A-D]-?\d)+$", re.IGNORECASE),      # "A-3, B-1, C-4"
-    re.compile(r"^\d( ?\d)+$"),                                      # "3 1 4 2"
+    re.compile(r"^\d([\s,-]+\d)+$"),                                 # "3 1 4 2", "1-2-3-4" (not a year like "1784")
 ]
 _CODE_TYPES: set[ItemType] = {"matching", "chronology", "mcq"}
 
@@ -65,6 +65,16 @@ def check_card(card: CardDraft, item: SourceItem) -> list[str]:
 def _content_words(text: str) -> set[str]:
     words = re.findall(r"[A-Za-z]{4,}|\d+", text.lower())
     return {w for w in words if w not in _STOPWORDS}
+
+
+content_words = _content_words
+
+
+def mostly_same(a: set[str], b: set[str], threshold: float = 0.6) -> bool:
+    """True if two word sets overlap by at least `threshold` (Jaccard). Used for near-duplicates."""
+    if not a or not b:
+        return False
+    return len(a & b) / len(a | b) >= threshold
 
 
 def _not_in_source(back: str, item: SourceItem) -> bool:

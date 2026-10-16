@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import job_tag %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Documents</h1>
+  <form action="/documents" method="post" enctype="multipart/form-data" data-upload>
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <label class="btn btn-primary cursor-pointer">
+      <span data-upload-label>Upload PDF</span>
+      <input name="pdf" type="file" accept="application/pdf,.pdf" required class="sr-only">
+    </label>
+  </form>
+</div>
+<p class="mt-2 text-muted">Turn study PDFs into Anki cards. Upload a PDF, choose pages, review, export.</p>
+{% if upload_error %}<p class="mt-4 rounded-md bg-[#fdebec] px-3 py-2 text-sm text-[#5d1715]" role="alert">{{ upload_error }}</p>{% endif %}
+
+<div class="mt-8 divider">
+  {% for d in docs %}
+  <section class="border-b border-line py-3">
+    <a href="/documents/{{ d.id }}" class="-mx-2 flex items-baseline gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
+      <span class="min-w-0 flex-1 truncate font-medium">{{ d.filename }}</span>
+      <span class="shrink-0 text-sm text-muted">{{ d.page_count }} pages</span>
+    </a>
+    {% for k in d.decks %}
+    <a href="/decks/{{ k.id }}{{ '/review' if k.cards.to_review and k.job and k.job.status == 'completed' else '' }}"
+       class="-mx-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md py-1.5 pr-2 pl-6 text-sm hover:bg-hover">
+      <span class="min-w-0 flex-1 truncate">{{ k.title }}</span>
+      <span class="flex items-center gap-2 text-muted">
+        {% if k.job and k.job.status != "completed" %}{{ job_tag(k.job) }}{% endif %}
+        {% if k.cards.to_review %}<span>{{ k.cards.to_review }} to review</span>{% endif %}
+        <span>{{ k.cards.approved }}/{{ k.cards.total }} approved</span>
+      </span>
+    </a>
+    {% endfor %}
+  </section>
+  {% else %}
+  <p class="py-10 text-center text-muted">No documents yet. Upload a PDF, or drop one anywhere on this page.</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -246,3 +246,73 @@ def test_fingerprint_ignores_case_spacing_punctuation():
     f1 = validate.fingerprint("Who excavated Hastinapur?", "B.B. Lal.")
     f2 = validate.fingerprint("who   excavated hastinapur", "bb lal")
     assert f1 == f2
+
+
+
+
+# ---------- ai.py: DeepSeek error handling and JSON repair ----------
+
+def _fake_body(content: str) -> dict:
+    return {"model": "deepseek-flash", "choices": [{"message": {"content": content}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 20, "prompt_cache_hit_tokens": 0}}
+
+
+def test_call_json_repairs_one_invalid_reply(monkeypatch):
+    replies = iter([_fake_body('{"front": "Q"}'),  # missing "back"
+                    _fake_body('{"front": "Who excavated Hastinapur?", "back": "B.B. Lal."}')])
+    sent = []
+    monkeypatch.setattr(ai, "_post", lambda messages: (sent.append(list(messages)), next(replies))[1])
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    card, usage = ai.call_json("system", "prompt", CardDraft, "v1")
+    assert card.back == "B.B. Lal."
+    assert "does not match the schema" in sent[1][-1]["content"]  # error was shown to the model
+    assert usage.input_tokens == 200 and usage.output_tokens == 40  # both calls counted
+
+
+def test_call_json_stops_at_once_on_permanent_error(monkeypatch):
+    calls = []
+
+    def _no_balance(messages):
+        calls.append(1)
+        raise ai.AIPermanentError("DeepSeek API error 402: no balance")
+
+    monkeypatch.setattr(ai, "_post", _no_balance)
+    with pytest.raises(ai.AIPermanentError, match="402"):
+        ai.call_json("system", "prompt", CardDraft, "v1")
+    assert len(calls) == 1
+
+
+# ---------- found on a real exam book (Ghatna Chakra) ----------
+
+def test_roman_numeral_statement_codes_decode():
+    from studytool.normalize import _parse_statement_option
+    assert _parse_statement_option("(ii) and (iii)", 3) == {2, 3}
+    assert _parse_statement_option("Only (i)", 3) == {1}
+
+
+def test_mcq_whose_answer_is_only_item_numbers_is_blocked():
+    item = SourceItem(
+        item_key="main|9|p31", type="mcq", page_refs=[31], raw_content="x",
+        options=[Option(label="c", text="(i) and (iii)")], resolved_answer="c", answer_source="inline",
+    )
+    assert normalize.normalize(item).issues
+
+
+def test_star_answer_is_not_an_answer():
+    from studytool.link import link_answers
+    item = SourceItem(item_key="main|2|p10", type="mcq", page_refs=[10], raw_content="x",
+                      question_number="2", options=[Option(label="a", text="y")], inline_answer="*")
+    linked = link_answers([item], [])[0]
+    assert linked.resolved_answer is None and "'*'" in linked.issue_reason
+
+
+def test_year_answer_is_not_a_code_leak():
+    item = SourceItem(item_key="main|3|p2", type="mcq", page_refs=[2], raw_content="passed in 1784")
+    assert "answer_code_leak" not in validate.check_card(CardDraft(front="When?", back="1784"), item)
+
+
+def test_statement_i_ii_wording_decodes():
+    from studytool.normalize import _parse_statement_option
+    assert _parse_statement_option("Statement I is true, but Statement II is false.", 2) == {1}
+    assert _parse_statement_option("Both Statement I and Statement II are true.", 2) == {1, 2}
+    assert _parse_statement_option("Both Statement I and Statement II are false.", 2) == set()

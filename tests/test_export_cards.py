@@ -262,31 +262,16 @@ def test_edit_card_unchanged_does_nothing(conn):
 
 # ---------- cards.set_status ----------
 
-def test_approving_flagged_card_without_note_raises(conn):
-    doc_id = _make_document(conn)
-    deck_id = _make_deck(conn, doc_id)
-    item = _make_item(conn, doc_id, deck_id, "main|1|p1", 1, [1])
-    card_id = _make_card(conn, deck_id, item, "k1|generated|0", 0, "Front", "Back",
-                          status="draft", flags=["answer_code_leak"])
-
-    with pytest.raises(ValueError):
-        cards.set_status(conn, card_id, "approved")
-
-    # with a note it should succeed
-    cards.set_status(conn, card_id, "approved", verified_note="Checked against page 5.")
-    row = conn.execute("SELECT status, verified_note FROM cards WHERE id = ?", (card_id,)).fetchone()
-    assert row["status"] == "approved"
-    assert row["verified_note"] == "Checked against page 5."
-
-
-def test_approving_card_with_source_issue_requires_note(conn):
+def test_approving_flagged_card_needs_no_note(conn):
     doc_id = _make_document(conn)
     deck_id = _make_deck(conn, doc_id)
     item = _make_item(conn, doc_id, deck_id, "main|1|p1", 1, [1], issue_reason="conflicting answer key")
-    card_id = _make_card(conn, deck_id, item, "k1|generated|0", 0, "Front", "Back", status="draft")
+    card_id = _make_card(conn, deck_id, item, "k1|generated|0", 0, "Front", "Back",
+                          status="needs_review", flags=["answer_code_leak"])
 
-    with pytest.raises(ValueError):
-        cards.set_status(conn, card_id, "approved")
+    cards.set_status(conn, card_id, "approved")
+    row = conn.execute("SELECT status FROM cards WHERE id = ?", (card_id,)).fetchone()
+    assert row["status"] == "approved"
 
 
 def test_approving_clean_card_without_note_succeeds(conn):
@@ -345,3 +330,36 @@ def test_merge_duplicate_rejects_drop_and_copies_evidence(conn):
 
     keep_evidence = conn.execute("SELECT evidence_id FROM card_evidence WHERE card_id = ?", (keep_id,)).fetchall()
     assert {r["evidence_id"] for r in keep_evidence} == {evidence_id}
+
+
+# ---------- export.export_apkg ----------
+
+def _apkg_notes(path) -> list[tuple[str, str, str]]:
+    """(guid, front, back) of every note in an .apkg (a zip holding an Anki SQLite collection)."""
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        db_bytes = z.read("collection.anki2")
+    tmp = path.with_suffix(".anki2")
+    tmp.write_bytes(db_bytes)
+    c = sqlite3.connect(tmp)
+    try:
+        return [(guid, *flds.split("\x1f")) for guid, flds in c.execute("SELECT guid, flds FROM notes ORDER BY id")]
+    finally:
+        c.close()
+
+
+def test_export_apkg_holds_approved_cards_with_stable_ids(conn, tmp_path, monkeypatch):
+    from studytool import config
+    monkeypatch.setattr(config, "EXPORT_DIR", tmp_path / "exports")
+
+    doc_id = _make_document(conn)
+    deck_id = _make_deck(conn, doc_id)
+    item = _make_item(conn, doc_id, deck_id, "main|1|p1", 1, [1])
+    _make_card(conn, deck_id, item, "k1|g1|0", 0, 'Who wrote "A & B"?', "Line one\nLine two", status="approved")
+    _make_card(conn, deck_id, item, "k2|g1|0", 1, "Draft front", "Draft back", status="draft")
+
+    notes = _apkg_notes(export.export_apkg(conn, deck_id))
+    assert [(f, b) for _, f, b in notes] == [('Who wrote "A &amp; B"?', "Line one<br>Line two")]
+
+    # A second export of the same deck gives the same note id, so Anki updates instead of duplicating.
+    assert _apkg_notes(export.export_apkg(conn, deck_id))[0][0] == notes[0][0]

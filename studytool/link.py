@@ -16,10 +16,13 @@ def _normalize_question_number(raw: str | None) -> str | None:
 
 
 def _normalize_answer_label(raw: str | None) -> str | None:
-    """'(c)', 'c)', 'C' -> 'c', compared case-insensitively."""
+    """'(c)', 'c)', 'C' -> 'c', compared case-insensitively. A mark with no letter or digit,
+    like '(*)' (books use it when no single option is correct), is not an answer."""
     if raw is None:
         return None
     cleaned = _ANSWER_STRIP_RE.sub("", raw)
+    if not any(ch.isalnum() for ch in cleaned):
+        return None
     return cleaned.lower() or None
 
 
@@ -131,7 +134,10 @@ def link_answers(items: list[SourceItem], key_entries: list[AnswerKeyEntry]) -> 
             answer_source = "explanation"
         else:
             answer_source = "none"
-            issue_reason = f"No answer found for question {item.question_number!r} in section {item.section_key!r}."
+            if item.inline_answer:
+                issue_reason = f"The source prints the answer as {item.inline_answer!r}, not a single option."
+            else:
+                issue_reason = f"No answer found for question {item.question_number!r} in section {item.section_key!r}."
 
         if resolved_label is not None:
             item.resolved_answer = _resolve_label_case(item, resolved_label)

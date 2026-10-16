@@ -149,21 +149,38 @@ def _run_segment(conn, job_id: int, document_id: int, pages: list[int],
     """Returns all usage recorded. Mutates job_steps/result_ref as cache."""
     usage_all: list[ModelUsage] = []
     prev_section_key: str | None = None
+    seen_text: dict[str, int] = {}  # page text -> first page with that text
+    # Saved results are reused only if they came from the same extraction and prompt version.
+    segment_version = f"x{config.EXTRACTOR_VERSION}|s{config.SEGMENT_PROMPT_VERSION}"
     for i, page_number in enumerate(pages):
         if jobs.cancel_requested(conn, job_id):
             break
         item_key = f"page:{page_number}"
         existing = _get_step(conn, job_id, "segment", item_key)
-        if existing is not None and existing["status"] == "done" and existing["result_ref"]:
+        page = _load_page_extract(conn, document_id, page_number)
+        # Some books print the same page twice. Reading it again would only make duplicate cards.
+        if page is not None and page.text.strip():
+            first = seen_text.setdefault(page.text, page_number)
+            if first != page_number:
+                if existing is None or existing["status"] != "skipped":
+                    step_id = _start_step(conn, job_id, "segment", item_key)
+                    _finish_step(conn, step_id, "skipped", error=f"same text as page {first}")
+                continue
+        if (existing is not None and existing["status"] == "done" and existing["result_ref"]
+                and existing["cache_key"] == segment_version):
             result = SegmentResult.model_validate_json(existing["result_ref"])
             if result.items:
                 prev_section_key = result.items[-1].section_key
             continue
 
-        page = _load_page_extract(conn, document_id, page_number)
         if page is None:
             continue  # extraction failed for this page; nothing to segment
-        next_page = _load_page_extract(conn, document_id, pages[i + 1]) if i + 1 < len(pages) else None
+        # The overlap must be the physically next page, and not a repeat of this one.
+        next_page = None
+        if i + 1 < len(pages) and pages[i + 1] == page_number + 1:
+            next_page = _load_page_extract(conn, document_id, pages[i + 1])
+            if next_page is not None and next_page.text == page.text:
+                next_page = None
         image_path = None
         if page.needs_vision:
             page_row = conn.execute(
@@ -182,12 +199,41 @@ def _run_segment(conn, job_id: int, document_id: int, pages: list[int],
             usage_all.extend(usage)
             if result.items:
                 prev_section_key = result.items[-1].section_key
-            _finish_step(conn, step_id, "done", result_ref=result.model_dump_json())
+            with db.tx(conn):
+                _record_usage(conn, step_id, usage)
+            _finish_step(conn, step_id, "done", cache_key=segment_version, result_ref=result.model_dump_json())
+            # Pages were (re)read, so the link and dedupe results built from the old ones are stale.
+            with db.tx(conn):
+                conn.execute(
+                    "UPDATE job_steps SET status = 'pending' WHERE job_id = ? AND stage IN ('link', 'dedupe')",
+                    (job_id,),
+                )
+        except ai.AIPermanentError as exc:
+            # Bad key, no balance, etc.: every later page would fail the same way. Stop the job.
+            _finish_step(conn, step_id, "failed", error=str(exc))
+            raise
         except Exception as exc:
             log.exception("segment failed for page %s", page_number)
             _finish_step(conn, step_id, "failed", error=str(exc))
     return usage_all
 
+
+def _record_usage(conn, step_id: int, usage: list[ModelUsage]) -> None:
+    """One model_calls row per AI call. Call inside the caller's transaction."""
+    for u in usage:
+        cost = u.estimated_cost
+        if cost is None and u.input_tokens is not None and u.output_tokens is not None:
+            cost = (u.input_tokens / 1_000_000) * config.PRICE_IN_PER_M + \
+                   (u.output_tokens / 1_000_000) * config.PRICE_OUT_PER_M
+        conn.execute(
+            "INSERT INTO model_calls (job_step_id, provider, model, prompt_version, "
+            "token_usage_json, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                step_id, u.provider, u.model, u.prompt_version,
+                json.dumps({"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}),
+                cost,
+            ),
+        )
 
 # ---------- link stage ----------
 
@@ -205,7 +251,24 @@ def _run_link(conn, job_id: int, document_id: int, deck_id: int, pages: list[int
         if step is None or step["status"] != "done" or not step["result_ref"]:
             continue
         result = SegmentResult.model_validate_json(step["result_ref"])
-        all_items.extend(result.items)
+        for item in result.items:
+            # The tail of a question that began on the previous page is already part of that
+            # item (it was given the page as overlap). Drop the fragment instead of keeping a
+            # second, incomplete copy of the same question. Match on the question number, or,
+            # when the model gave the fragment no number, on its first line of text.
+            first_line = next((ln.replace("*", "").strip() for ln in (item.raw_content or "").splitlines()
+                               if len(ln.replace("*", "").strip()) >= 15), "")
+            if any(
+                item.page_refs[0] in prev.page_refs[1:] and (
+                    (item.question_number and prev.section_key == item.section_key
+                     and prev.question_number == item.question_number)
+                    or (first_line and first_line in prev.raw_content.replace("*", ""))
+                )
+                for prev in all_items
+            ):
+                log.info("dropping continuation fragment %s", item.item_key)
+                continue
+            all_items.append(item)
         key_entries.extend(result.key_entries)
 
     step_id = _start_step(conn, job_id, "link", item_key)
@@ -300,20 +363,7 @@ def _insert_cards_for_item(conn, deck_id: int, source_item_id: int, item_key: st
                 "INSERT INTO card_revisions (card_id, front, back, origin) VALUES (?, ?, ?, 'generated')",
                 (card_id, card.front, card.back),
             )
-        for u in gen.usage:
-            cost = u.estimated_cost
-            if cost is None and u.input_tokens is not None and u.output_tokens is not None:
-                cost = (u.input_tokens / 1_000_000) * config.PRICE_IN_PER_M + \
-                       (u.output_tokens / 1_000_000) * config.PRICE_OUT_PER_M
-            conn.execute(
-                "INSERT INTO model_calls (job_step_id, provider, model, prompt_version, "
-                "token_usage_json, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    step_id, u.provider, u.model, u.prompt_version,
-                    json.dumps({"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}),
-                    cost,
-                ),
-            )
+        _record_usage(conn, step_id, gen.usage)
         conn.execute(
             "UPDATE source_items SET normalized_json = ?, disposition = ?, issue_reason = ? WHERE id = ?",
             (gen.normalized.model_dump_json(), gen.disposition, gen.issue_reason, source_item_id),
@@ -411,7 +461,7 @@ def _run_dedupe(conn, job_id: int, deck_id: int) -> None:
     step_id = _start_step(conn, job_id, "dedupe", item_key)
     try:
         rows = conn.execute(
-            "SELECT c.id, c.fingerprint, c.status, c.duplicate_of, si.id AS source_item_id, "
+            "SELECT c.id, c.fingerprint, c.status, c.duplicate_of, c.front, c.back, si.id AS source_item_id, "
             "si.ordinal AS item_ordinal, c.ordinal AS card_ordinal "
             "FROM cards c JOIN source_items si ON si.id = c.source_item_id "
             "WHERE c.deck_id = ? AND c.fingerprint IS NOT NULL "
@@ -420,13 +470,22 @@ def _run_dedupe(conn, job_id: int, deck_id: int) -> None:
         ).fetchall()
 
         seen: dict[str, int] = {}  # fingerprint -> first card id
+        by_back: dict[str, list[tuple[int, set[str]]]] = {}  # same answer -> (card id, front words)
         item_cards: dict[int, list[sqlite3.Row]] = {}
         with db.tx(conn):
             for row in rows:
                 item_cards.setdefault(row["source_item_id"], []).append(row)
                 first_id = seen.get(row["fingerprint"])
+                # Exam books ask the same fact many times in different words; same answer and
+                # mostly the same question words counts as a possible duplicate too.
+                back_key = validate.fingerprint("", row["back"])
+                words = validate.content_words(row["front"])
+                if first_id is None:
+                    first_id = next((cid for cid, w in by_back.get(back_key, [])
+                                     if validate.mostly_same(words, w)), None)
                 if first_id is None:
                     seen[row["fingerprint"]] = row["id"]
+                    by_back.setdefault(back_key, []).append((row["id"], words))
                     continue
                 if row["status"] == "rejected" or row["duplicate_of"] is not None:
                     continue
@@ -475,7 +534,10 @@ def run_job(conn: sqlite3.Connection, job_id: int, worker_id: str) -> dict:
     if jobs.cancel_requested(conn, job_id):
         return {"status": "cancelled", "error": None}
 
-    _run_segment(conn, job_id, job["document_id"], all_pages, set(content_pages), set(key_pages))
+    try:
+        _run_segment(conn, job_id, job["document_id"], all_pages, set(content_pages), set(key_pages))
+    except ai.AIPermanentError as exc:
+        return {"status": "failed", "error": str(exc)}
     if jobs.cancel_requested(conn, job_id):
         return {"status": "cancelled", "error": None}
 
@@ -565,20 +627,7 @@ def run_regenerate(conn: sqlite3.Connection, job_id: int, worker_id: str) -> dic
                     "INSERT INTO card_revisions (card_id, front, back, origin) VALUES (?, ?, ?, 'regenerated')",
                     (card_id, card.front, card.back),
                 )
-            for u in gen.usage:
-                cost = u.estimated_cost
-                if cost is None and u.input_tokens is not None and u.output_tokens is not None:
-                    cost = (u.input_tokens / 1_000_000) * config.PRICE_IN_PER_M + \
-                           (u.output_tokens / 1_000_000) * config.PRICE_OUT_PER_M
-                conn.execute(
-                    "INSERT INTO model_calls (job_step_id, provider, model, prompt_version, "
-                    "token_usage_json, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        step_id, u.provider, u.model, u.prompt_version,
-                        json.dumps({"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}),
-                        cost,
-                    ),
-                )
+            _record_usage(conn, step_id, gen.usage)
         _finish_step(conn, step_id, "done")
         return {"status": "completed", "error": None}
     except ai.AIPermanentError as exc:

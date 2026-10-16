@@ -1,0 +1,23 @@
+{#- View switch and filters shared by the card and table views. Changing a filter submits the form. -#}
+<form method="get" class="mt-5 flex flex-wrap items-center gap-x-1 gap-y-2 text-sm" data-autosubmit>
+  <input type="hidden" name="view" value="{{ view }}">
+  <a href="?view=card&{{ query }}" class="btn btn-sm {{ 'bg-hover font-medium' if view == 'card' }}" {% if view == 'card' %}aria-current="page"{% endif %}>One by one</a>
+  <a href="?view=table&{{ query }}" class="btn btn-sm {{ 'bg-hover font-medium' if view == 'table' }}" {% if view == 'table' %}aria-current="page"{% endif %}>Table</a>
+  <span class="mx-1 h-4 w-px bg-line" aria-hidden="true"></span>
+  <label class="sr-only" for="f-status">Show</label>
+  <select id="f-status" name="status" class="btn btn-sm cursor-pointer bg-transparent text-muted">
+    {% for value, label in [("to_review", "To review · " ~ counts.to_review), ("needs_review", "Flagged · " ~ counts.needs_review),
+                            ("approved", "Approved · " ~ counts.approved), ("rejected", "Rejected · " ~ counts.rejected),
+                            ("all", "All · " ~ counts.total)] %}
+      <option value="{{ value }}" {% if f.status == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <label class="sr-only" for="f-type">Question type</label>
+  <select id="f-type" name="type" class="btn btn-sm cursor-pointer bg-transparent text-muted">
+    <option value="">Any type</option>
+    {% for t in types %}<option value="{{ t }}" {% if f.type == t %}selected{% endif %}>{{ t.replace("_", " ")|capitalize }}</option>{% endfor %}
+  </select>
+  <label class="sr-only" for="f-page">Page</label>
+  <input id="f-page" name="page" value="{{ f.page }}" inputmode="numeric" placeholder="Page" class="btn btn-sm w-16 bg-transparent text-muted placeholder:text-muted">
+  <noscript><button class="btn btn-sm">Apply</button></noscript>
+</form>

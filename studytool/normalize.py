@@ -240,6 +240,13 @@ _NEITHER_RE = re.compile(r"\bneither\s+(\d+)\s+nor\s+(\d+)\b", re.IGNORECASE)
 _LIST_AND_ONLY_RE = re.compile(r"^\s*((?:\d+\s*,\s*)*\d+\s*(?:and|&)\s*\d+)\s+only\s*$", re.IGNORECASE)
 _ALL_RE = re.compile(r"\ball\s+of\s+the\s+above\b", re.IGNORECASE)
 _NONE_RE = re.compile(r"\bnone\s+of\s+the\s+above\b", re.IGNORECASE)
+# Statement numbers printed as roman numerals, e.g. "(ii) and (iii)" or "I and II only".
+_ROMAN_TOKEN_RE = re.compile(r"\(?\b(viii|vii|vi|iv|ix|v|x|iii|ii|i)\b\)?", re.IGNORECASE)
+_CODE_WORDS_RE = re.compile(r"\b(and|only|both|neither|nor|all|of|the|above)\b", re.IGNORECASE)
+_TRUE_WORDS = {"true", "correct"}
+_BOTH_STATEMENTS_RE = re.compile(
+    r"\bboth\s+statements?\s+(\d+)\s+and\s+(?:statement\s+)?(\d+)\s+are\s+(true|correct|false|incorrect)", re.IGNORECASE)
+_EACH_STATEMENT_RE = re.compile(r"\bstatement\s+(\d+)\s+is\s+(true|correct|false|incorrect)", re.IGNORECASE)
 
 
 def _parse_statement_option(text: str, n_statements: int) -> set[int] | None:
@@ -247,7 +254,14 @@ def _parse_statement_option(text: str, n_statements: int) -> set[int] | None:
 
     None means the wording could not be confidently parsed.
     """
-    t = text.strip()
+    t = _ROMAN_TOKEN_RE.sub(lambda m: str(ROMAN_MAP[m.group(1).lower()]), text.strip())
+    # "Statement I is true, but Statement II is false" / "Both Statement I and Statement II are true".
+    both = _BOTH_STATEMENTS_RE.search(t)
+    if both:
+        return {int(both.group(1)), int(both.group(2))} if both.group(3).lower() in _TRUE_WORDS else set()
+    each = _EACH_STATEMENT_RE.findall(t)
+    if each:
+        return {int(n) for n, verdict in each if verdict.lower() in _TRUE_WORDS}
     if _ALL_RE.search(t):
         return set(range(1, n_statements + 1))
     if _NEITHER_RE.search(t):
@@ -334,6 +348,11 @@ def _normalize_mcq(item: SourceItem, norm: Normalized) -> None:
             norm.issues.append("mcq item has no options and no resolved answer")
         return
     norm.correct_answer_text = opt.text.strip()
+    # An answer like "1 and 3 only" or "(i) and (iii)" only means something together with the
+    # numbered list it refers to. Without that list there is no fact to state.
+    residue = re.sub(r"[\d\W_]", "", _ROMAN_TOKEN_RE.sub("", _CODE_WORDS_RE.sub("", opt.text)))
+    if not item.statements and not residue and _parse_statement_option(opt.text, 0) is not None:
+        norm.issues.append(f"answer '{opt.text}' refers to numbered items that were not captured")
 
 
 def normalize(item: SourceItem) -> Normalized:

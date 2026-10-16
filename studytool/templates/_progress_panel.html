@@ -1,0 +1,64 @@
+{#- Polled every 2 s while the job runs (app.js swaps this whole block). -#}
+{% from "_macros.html" import job_tag %}
+<div data-panel-active="{{ 1 if p.active else 0 }}">
+{% if not p.job %}
+  <p class="text-muted">This deck has not been processed yet.</p>
+{% else %}
+  {% set job = p.job %}
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+    {{ job_tag(job) }}
+    <p class="min-w-0 flex-1">
+      {% if job.status == "queued" %}Waiting to start.
+      {% elif job.status == "running" %}
+        {% if p.progress.cancel_requested %}Stopping…{% else %}{{ p.current.label }} <span class="text-muted">{{ p.current.done }}/{{ p.current.total }} · step {{ p.step_no }} of {{ p.stages|length }}</span>{% endif %}
+      {% elif job.status == "completed" %}{{ p.cards.total }} cards written{% if p.cards.to_review %}, {{ p.cards.to_review }} to review{% endif %}.
+      {% elif job.status == "failed" %}Stopped by an error. Finished work is kept.
+      {% else %}Stopped. Finished work is kept.{% endif %}
+    </p>
+    {% if job.status in ("queued", "running") %}
+      <button class="btn btn-sm btn-outline" data-post="/api/jobs/{{ job.id }}/cancel" {% if p.progress.cancel_requested %}disabled{% endif %}>Stop</button>
+    {% elif job.status in ("failed", "cancelled") %}
+      <button class="btn btn-sm btn-outline" data-post="/api/jobs/{{ job.id }}/retry" data-reload>Resume</button>
+    {% endif %}
+    {% if p.cards.to_review and job.status == "completed" %}<a href="/decks/{{ deck.id }}/review" class="btn btn-sm btn-primary">Review cards</a>{% endif %}
+  </div>
+
+  {% if job.status in ("queued", "running") %}
+  <div class="mt-4 h-1 overflow-hidden rounded-full bg-line" role="progressbar" aria-label="Overall progress"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p.pct }}">
+    <div class="h-full rounded-full bg-accent transition-all" style="width: {{ p.pct }}%"></div>
+  </div>
+  {% if not p.worker_alive %}<p class="mt-3 text-sm text-[#c4554d]">The worker is not running. Start the app with <code>uv run python run.py</code>.</p>{% endif %}
+  {% endif %}
+
+  {% if job.error %}<p class="mt-3 text-sm text-[#c4554d]" role="alert">{{ job.error }}</p>{% endif %}
+  {% for f in p.progress.failed_steps %}<p class="mt-1 text-sm text-[#c4554d]">{{ f.item_key }}: {{ f.error }}</p>{% endfor %}
+
+  <p class="mt-4 text-sm text-muted">
+    {{ p.outcomes.converted }} questions turned into cards{% if p.outcomes.blocked %} · {{ p.outcomes.blocked }} blocked{% endif %}{% if p.outcomes.duplicate %} · {{ p.outcomes.duplicate }} duplicates{% endif %}
+    · {{ p.content_pages|length }} pages · about ${{ "%.2f"|format(p.progress.estimated_cost) }}
+  </p>
+
+  {% if p.blocked %}
+  <h2 class="mt-10 text-lg font-semibold">Blocked <span class="font-normal text-muted">{{ p.blocked|length }}</span></h2>
+  <p class="mt-1 text-sm text-muted">These made no cards. Often the question or its answer is on a page you didn't include.</p>
+  <ul class="mt-3 divider">
+    {% for b in p.blocked %}
+    <li class="border-b border-line py-3">
+      <p class="text-sm"><span class="font-medium">{{ b.label }}</span>
+        {% for pg in b.pages %}<a class="ml-1 text-muted underline decoration-line underline-offset-2 hover:text-ink" target="_blank" rel="noopener" href="/documents/{{ deck.document_id }}/pages/{{ pg }}.png">p.{{ pg }}</a>{% endfor %}
+        <span class="text-muted">— {{ b.reason }}</span></p>
+      <p class="mt-0.5 truncate text-[13px] text-faint">{{ b.excerpt }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if p.skipped %}
+  <details class="mt-6 group">
+    <summary class="btn -ml-2.5 cursor-pointer list-none text-muted"><span class="transition-transform group-open:rotate-90">›</span> Skipped {{ p.skipped|length }}</summary>
+    <ul class="mt-2 text-sm text-muted">{% for b in p.skipped %}<li class="py-1">{{ b.label }} · p.{{ b.pages|join(", ") }} · {{ b.reason }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+{% endif %}
+</div>

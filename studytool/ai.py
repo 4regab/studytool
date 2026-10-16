@@ -1,26 +1,29 @@
-"""AI provider adapter (Gemini). OWNER: agent C.
+"""AI provider adapter (DeepSeek, OpenAI-compatible chat API, called with the standard library).
 
-Only this module imports the provider SDK, so another provider can be added later
-behind the same call_json() signature.
+Only this module talks to the provider, so another one can be added later behind the
+same call_json() signature.
 
 Rules:
-- PDF text is untrusted data. Wrap it in <source>...</source> and tell the model to
+- PDF text is untrusted data. Callers wrap it in <source>...</source> and tell the model to
   treat it as data, never instructions. No tools/function calling are enabled.
-- Use schema-constrained JSON output (response_schema = the pydantic model).
-- Retry transient errors (429, 5xx, timeouts) with bounded exponential backoff
-  (config.AI_MAX_RETRIES). Raise AIPermanentError at once for auth (401/403),
-  bad request, or a response that still fails validation after retries.
+- DeepSeek's JSON mode guarantees valid JSON but not a schema, so the pydantic model's JSON
+  schema goes in the system prompt and every reply is validated with pydantic. An invalid
+  reply is sent back once with the validation error so the model can fix it.
+- Retry transient errors (429, 5xx, timeouts, empty replies) with bounded exponential backoff
+  (config.AI_MAX_RETRIES). Raise AIPermanentError at once for a bad key, no balance, or a
+  rejected request.
 - Never log or store the API key.
 """
+import base64
+import json
+import os
 import random
-import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import TypeVar
 
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
 from pydantic import BaseModel, ValidationError
 
 from studytool import config
@@ -38,104 +41,83 @@ class AITransientError(AIError):
 
 
 class AIPermanentError(AIError):
-    """Do not retry: bad key, permission, malformed input. Message tells the user what to fix."""
+    """Do not retry: bad key, no balance, malformed input. Message tells the user what to fix."""
 
-
-# Lazily created, shared client. genai.Client() reads GEMINI_API_KEY itself.
-_client: genai.Client | None = None
-_client_lock = threading.Lock()
 
 RETRYABLE_CODES = {429, 500, 502, 503, 504}
-PERMANENT_CODES = {400, 401, 403, 404}
+PERMANENT_HINTS = {
+    400: "the request was rejected as malformed",
+    401: "check DEEPSEEK_API_KEY",
+    402: "the DeepSeek account has no balance left; top up at platform.deepseek.com",
+    404: f"model not found: set STUDYTOOL_DEEPSEEK_MODEL (current: {config.DEEPSEEK_MODEL})",
+    422: "the request had invalid parameters",
+}
 
 
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        with _client_lock:
-            if _client is None:
-                _client = genai.Client()
-    return _client
+def _api_key() -> str:
+    key = os.environ.get("DEEPSEEK_API_KEY")
+    if not key:
+        raise AIPermanentError("DEEPSEEK_API_KEY is not set. Set it and restart the app.")
+    return key
 
 
-def _estimate_cost(input_tokens: int | None, output_tokens: int | None) -> float | None:
-    if input_tokens is None or output_tokens is None:
-        return None
-    return (input_tokens / 1_000_000) * config.PRICE_IN_PER_M + (output_tokens / 1_000_000) * config.PRICE_OUT_PER_M
+def _usage(body: dict, prompt_version: str) -> ModelUsage:
+    u = body.get("usage") or {}
+    tokens_in, tokens_out = u.get("prompt_tokens"), u.get("completion_tokens")
+    cost = None
+    if tokens_in is not None and tokens_out is not None:
+        hit = u.get("prompt_cache_hit_tokens") or 0
+        cost = ((tokens_in - hit) * config.PRICE_IN_PER_M + hit * config.PRICE_IN_CACHED_PER_M
+                + tokens_out * config.PRICE_OUT_PER_M) / 1_000_000
+    return ModelUsage(provider=config.AI_PROVIDER, model=body.get("model") or config.DEEPSEEK_MODEL,
+                      prompt_version=prompt_version, input_tokens=tokens_in, output_tokens=tokens_out,
+                      estimated_cost=cost)
 
 
-def _usage_from_response(resp, prompt_version: str) -> ModelUsage:
-    meta = getattr(resp, "usage_metadata", None)
-    input_tokens = getattr(meta, "prompt_token_count", None) if meta else None
-    output_tokens = getattr(meta, "candidates_token_count", None) if meta else None
-    return ModelUsage(
-        provider=config.AI_PROVIDER,
-        model=config.GEMINI_MODEL,
-        prompt_version=prompt_version,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        estimated_cost=_estimate_cost(input_tokens, output_tokens),
+def _post(messages: list[dict]) -> dict:
+    """One HTTP request. Raises AITransientError or AIPermanentError."""
+    payload = {
+        "model": config.DEEPSEEK_MODEL,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+        "max_tokens": config.AI_MAX_OUTPUT_TOKENS,
+        "thinking": {"type": "enabled" if config.DEEPSEEK_THINKING else "disabled"},
+        "stream": False,
+    }
+    if not config.DEEPSEEK_THINKING:
+        payload["temperature"] = 0  # ignored in thinking mode
+    req = urllib.request.Request(
+        config.DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {_api_key()}"},
     )
+    try:
+        with urllib.request.urlopen(req, timeout=config.AI_TIMEOUT_SECONDS) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        if e.code in RETRYABLE_CODES:
+            raise AITransientError(f"DeepSeek API error {e.code}: {detail}") from e
+        hint = PERMANENT_HINTS.get(e.code, "request rejected")
+        raise AIPermanentError(f"DeepSeek API error {e.code}: {hint}. {detail}") from e
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, json.JSONDecodeError) as e:
+        raise AITransientError(f"DeepSeek network error: {e}") from e
 
 
-def _sanitized_schema(response_model: type[T]) -> dict:
-    """Strip features Gemini's response_schema sometimes rejects (defaults, extra keywords).
-
-    Keeps the shape (types, properties, required, enum) that Gemini documents support.
-    """
-    schema = response_model.model_json_schema()
-
-    def clean(node):
-        if isinstance(node, dict):
-            node.pop("default", None)
-            node.pop("title", None)
-            # Gemini doesn't support tuple-style prefixItems; approximate as a plain array.
-            if "prefixItems" in node:
-                items = node.pop("prefixItems")
-                node["type"] = "array"
-                node["items"] = clean(items[0]) if items else {"type": "string"}
-            for key in ("properties",):
-                if key in node and isinstance(node[key], dict):
-                    for v in node[key].values():
-                        clean(v)
-            for key in ("items",):
-                if key in node:
-                    clean(node[key])
-            for key in ("anyOf", "oneOf", "allOf"):
-                if key in node and isinstance(node[key], list):
-                    for v in node[key]:
-                        clean(v)
-            if "$defs" in node:
-                for v in node["$defs"].values():
-                    clean(v)
-        return node
-
-    return clean(schema)
+def _system_with_schema(system: str, response_model: type[BaseModel]) -> str:
+    schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
+    return (f"{system}\n\nReply with one JSON object only (no prose, no code fences) that "
+            f"matches this JSON schema:\n{schema}")
 
 
-def _build_contents(prompt: str, images: list[Path] | None) -> list:
-    contents: list = [prompt]
-    for img in images or []:
-        contents.append(types.Part.from_bytes(data=img.read_bytes(), mime_type="image/png"))
-    return contents
-
-
-def _call_once(system: str, prompt: str, response_model: type[T], images: list[Path] | None, use_json_schema: bool):
-    client = _get_client()
-    gen_config_kwargs = dict(
-        system_instruction=system,
-        response_mime_type="application/json",
-        temperature=0,
-    )
-    if use_json_schema:
-        gen_config_kwargs["response_json_schema"] = _sanitized_schema(response_model)
-    else:
-        gen_config_kwargs["response_schema"] = response_model
-    return client.models.generate_content(
-        model=config.GEMINI_MODEL,
-        contents=_build_contents(prompt, images),
-        config=types.GenerateContentConfig(**gen_config_kwargs),
-    )
+def _user_content(prompt: str, images: list[Path] | None):
+    if not images:
+        return prompt
+    parts: list[dict] = [{"type": "text", "text": prompt}]
+    for img in images:
+        b64 = base64.b64encode(img.read_bytes()).decode("ascii")
+        parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    return parts
 
 
 def call_json(
@@ -145,57 +127,49 @@ def call_json(
     prompt_version: str,
     images: list[Path] | None = None,
 ) -> tuple[T, ModelUsage]:
-    """Send one request and return the parsed response plus usage (tokens + estimated cost)."""
+    """Send one request and return the parsed response plus usage (tokens + estimated cost).
+
+    Usage is from the final successful request; a repair round-trip's tokens are added to it.
+    """
+    messages = [
+        {"role": "system", "content": _system_with_schema(system, response_model)},
+        {"role": "user", "content": _user_content(prompt, images)},
+    ]
     last_error: Exception | None = None
-    use_json_schema = False  # start by trying the pydantic model directly
-    json_retry_used = False
+    repaired = False
+    tokens_in = tokens_out = 0
+    cost = 0.0
 
     for attempt in range(config.AI_MAX_RETRIES + 1):
+        if attempt:
+            time.sleep(min(2 ** attempt, 30) + random.uniform(0, 1))
         try:
-            resp = _call_once(system, prompt, response_model, images, use_json_schema)
-        except APIError as e:
-            code = getattr(e, "code", None)
-            if code in PERMANENT_CODES:
-                guidance = "check GEMINI_API_KEY" if code in (401, 403) else (
-                    f"model not found: set STUDYTOOL_GEMINI_MODEL (current: {config.GEMINI_MODEL})"
-                    if code == 404 else "request was rejected; check prompt/schema"
-                )
-                # response_schema rejecting the pydantic model shows up as a 400; fall back once.
-                if code == 400 and not use_json_schema:
-                    use_json_schema = True
-                    continue
-                raise AIPermanentError(f"Gemini API error {code}: {e}. {guidance}") from e
-            if code in RETRYABLE_CODES:
-                last_error = e
-            else:
-                raise AIPermanentError(f"Gemini API error {code}: {e}") from e
-        except (TimeoutError, ConnectionError, OSError) as e:
+            body = _post(messages)
+        except AITransientError as e:
             last_error = e
+            continue
+        usage = _usage(body, prompt_version)
+        tokens_in += usage.input_tokens or 0
+        tokens_out += usage.output_tokens or 0
+        cost += usage.estimated_cost or 0.0
+        text = ((body.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        if not text.strip():
+            # DeepSeek's JSON mode can occasionally return empty content; just retry.
+            last_error = AITransientError("DeepSeek returned an empty reply")
+            continue
+        try:
+            parsed = response_model.model_validate_json(text)
         except ValidationError as e:
-            # The SDK builds its own internal schema from response_model before sending the
-            # request, and some pydantic features (e.g. tuple/prefixItems) fail that local
-            # conversion. Fall back to a sanitized JSON schema sent as response_json_schema.
-            if not use_json_schema:
-                use_json_schema = True
-                continue
-            raise AIPermanentError(f"response schema unsupported by Gemini SDK: {e}") from e
-        else:
-            text = getattr(resp, "text", None)
-            try:
-                if text is None:
-                    raise ValueError("empty response text")
-                parsed = response_model.model_validate_json(text)
-                return parsed, _usage_from_response(resp, prompt_version)
-            except (ValidationError, ValueError) as e:
-                if not json_retry_used:
-                    # Invalid JSON / schema mismatch: retry once before giving up.
-                    json_retry_used = True
-                    last_error = e
-                    continue
-                raise AITransientError(f"Gemini returned invalid JSON after retry: {e}") from e
+            if repaired:
+                raise AITransientError(f"DeepSeek reply did not match the schema after a repair try: {e}") from e
+            # Show the model its own reply and the error once, then try again.
+            repaired = True
+            messages += [{"role": "assistant", "content": text},
+                         {"role": "user", "content": f"That JSON does not match the schema:\n{e}\n"
+                                                     "Reply again with the corrected JSON object only."}]
+            last_error = e
+            continue
+        usage.input_tokens, usage.output_tokens, usage.estimated_cost = tokens_in, tokens_out, cost
+        return parsed, usage
 
-        if attempt < config.AI_MAX_RETRIES:
-            backoff = (2 ** attempt) + random.uniform(0, 1)
-            time.sleep(backoff)
-
-    raise AITransientError(f"Gemini call failed after {config.AI_MAX_RETRIES} retries: {last_error}")
+    raise AITransientError(f"DeepSeek call failed after {config.AI_MAX_RETRIES} retries: {last_error}")

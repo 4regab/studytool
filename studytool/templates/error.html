@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Error · Flashcards{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold tracking-tight">{{ message }}</h1>
+<p class="mt-2 text-muted">Error {{ status }}</p>
+<a href="/" class="btn btn-outline mt-6">Back to documents</a>
+{% endblock %}

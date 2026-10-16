@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import deck_header, crumb %}
+{% block title %}{{ deck.title }} · Progress{% endblock %}
+{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
+{% block content %}
+{{ deck_header(deck, tab, p.cards) }}
+<div id="progress-panel" class="mt-8" data-poll="/decks/{{ deck.id }}/progress-panel" data-active="{{ 1 if p.active else 0 }}">
+  {% include "_progress_panel.html" %}
+</div>
+{% endblock %}

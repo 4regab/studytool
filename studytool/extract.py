@@ -47,6 +47,39 @@ def _block_text_and_bold(block: dict) -> tuple[str, bool]:
     return text, (all_bold and any_span)
 
 
+def _reading_order(raw_blocks: list[dict], page_width: float) -> list[dict]:
+    """Order blocks the way a person reads a two-column page.
+
+    PyMuPDF's sort=True orders blocks top to bottom across the whole page, which interleaves
+    the two columns of an exam book. Instead: blocks that span the middle of the page (titles,
+    headers, footers) split the page into bands; inside a band, read the left column top to
+    bottom, then the right column. A single-column page has every block in one band and one
+    column, so its order is unchanged.
+    ponytail: assumes at most two columns split at the page middle; 3-column layouts need a
+    real column detector (e.g. clustering block x positions).
+    """
+    mid = page_width / 2
+    margin = 20
+
+    def spans_middle(b: dict) -> bool:
+        return b["bbox"][0] < mid - margin and b["bbox"][2] > mid + margin
+
+    def by_column(band: list[dict]) -> list[dict]:
+        left = [b for b in band if (b["bbox"][0] + b["bbox"][2]) / 2 < mid]
+        right = [b for b in band if (b["bbox"][0] + b["bbox"][2]) / 2 >= mid]
+        return sorted(left, key=lambda b: b["bbox"][1]) + sorted(right, key=lambda b: b["bbox"][1])
+
+    ordered: list[dict] = []
+    band: list[dict] = []
+    for b in sorted(raw_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0])):
+        if spans_middle(b):
+            ordered += by_column(band) + [b]
+            band = []
+        else:
+            band.append(b)
+    return ordered + by_column(band)
+
+
 def extract_page(pdf_path: Path, page_number: int) -> PageExtract:
     """Text blocks with coordinates, in reading order (sort=True).
 
@@ -63,7 +96,7 @@ def extract_page(pdf_path: Path, page_number: int) -> PageExtract:
         data = page.get_text("dict", sort=True)
         blocks: list[Block] = []
         text_parts: list[str] = []
-        for raw_block in data.get("blocks", []):
+        for raw_block in _reading_order(data.get("blocks", []), page.rect.width):
             if "lines" not in raw_block:  # image block, not text
                 continue
             block_text, block_bold = _block_text_and_bold(raw_block)

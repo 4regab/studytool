@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import deck_header, card_tag, crumb %}
+{% block title %}{{ deck.title }} · Review{% endblock %}
+{% block width %}max-w-6xl{% endblock %}
+{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
+{% block content %}
+{{ deck_header(deck, tab, counts) }}
+{% include "_filters.html" %}
+
+{% if not item %}
+  <div class="py-20 text-center">
+    <p class="text-lg">{% if f.status == "to_review" and counts.total %}All cards reviewed.{% else %}No cards match these filters.{% endif %}</p>
+    {% if counts.approved %}<a href="/decks/{{ deck.id }}/export" class="btn btn-primary mt-5">Export {{ counts.approved }} cards</a>{% endif %}
+  </div>
+{% else %}
+{% set c = item.card %}
+{% set next_url = '?view=card&' ~ query ~ '&card=' ~ next_id if next_id else '?view=card&' ~ query %}
+{% set prev_url = '?view=card&' ~ query ~ '&card=' ~ prev_id if prev_id else '' %}
+<div class="mt-6 grid gap-10 lg:grid-cols-2" data-review-card data-card-id="{{ c.id }}" data-next="{{ next_url }}" data-prev="{{ prev_url }}">
+  <section aria-label="Card">
+    <div class="flex items-center gap-2 text-sm text-muted">
+      {{ card_tag(c.status) }}
+      <span class="truncate">{{ c.item_type.replace("_", " ")|capitalize }}{% if c.question_number %} · Q{{ c.question_number }}{% endif %}{% if item.pages %} · p.{{ item.pages|join(", ") }}{% endif %}</span>
+      <span class="ml-auto shrink-0 tabular-nums">{% if pos >= 0 %}{{ pos + 1 }} of {{ total }}{% endif %}</span>
+      <a href="{{ prev_url or '#' }}" class="btn btn-sm {{ 'pointer-events-none opacity-30' if not prev_id }}" aria-label="Previous card" data-nav>←</a>
+      <a href="{{ next_url if next_id else '#' }}" class="btn btn-sm {{ 'pointer-events-none opacity-30' if not next_id }}" aria-label="Next card" data-nav>→</a>
+    </div>
+
+    <label for="front" class="sr-only">Front</label>
+    <textarea id="front" rows="1" class="plain mt-5 text-2xl leading-snug font-semibold" data-field="front" data-autosize>{{ c.front }}</textarea>
+    <div class="my-4 divider"></div>
+    <label for="back" class="sr-only">Back</label>
+    <textarea id="back" rows="1" class="plain text-lg" data-field="back" data-autosize>{{ c.back }}</textarea>
+
+    {% if item.reasons %}
+    <ul class="mt-6 space-y-1 text-sm text-[#73400e]">
+      {% for r in item.reasons %}<li class="flex gap-2"><span aria-hidden="true">!</span><span>{{ r }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.duplicate %}
+    <div class="mt-4 rounded-md bg-wash p-3 text-sm">
+      <p class="text-muted">Earlier card</p>
+      <p class="mt-1">{{ item.duplicate.front }} <span class="text-muted">→ {{ item.duplicate.back }}</span></p>
+      <button class="btn btn-sm btn-outline mt-2 bg-white" data-action="merge">Reject this one as a duplicate</button>
+    </div>
+    {% endif %}
+
+    <div class="mt-8 flex items-center gap-2">
+      <button class="btn btn-primary px-4" data-action="approve">Approve</button>
+      <button class="btn btn-outline px-4" data-action="reject">Reject</button>
+      <button class="btn btn-sm ml-auto text-muted" data-action="regenerate" title="Ask the AI to write this question's cards again. New cards are added for review.">Rewrite with AI</button>
+    </div>
+    <p class="mt-4 text-[12px] text-faint max-sm:hidden">
+      <span class="kbd">A</span> approve · <span class="kbd">R</span> reject · <span class="kbd">J</span> <span class="kbd">K</span> next / previous · edits save automatically
+    </p>
+  </section>
+
+  {% if item.pages %}
+  <section aria-label="Source page" class="lg:sticky lg:top-14 lg:self-start">
+    <details open data-page-details class="group">
+      <summary class="btn -ml-2.5 cursor-pointer list-none text-muted lg:hidden"><span class="transition-transform group-open:rotate-90">›</span> Source page</summary>
+      {% if item.pages|length > 1 %}
+      <div class="mb-2 flex gap-1" role="group" aria-label="Source pages">
+        {% for pg in item.pages %}<button type="button" class="btn btn-sm {{ 'bg-hover font-medium' if loop.first }}" data-show-page="/documents/{{ c.document_id }}/pages/{{ pg }}.png">Page {{ pg }}</button>{% endfor %}
+      </div>
+      {% endif %}
+      <a href="/documents/{{ c.document_id }}/pages/{{ item.pages[0] }}.png" target="_blank" rel="noopener" data-page-link>
+        <img src="/documents/{{ c.document_id }}/pages/{{ item.pages[0] }}.png" alt="Source page {{ item.pages[0] }}" data-page-img
+             class="w-full rounded-md border border-line lg:max-h-[calc(100vh-8rem)] lg:object-contain lg:object-top">
+      </a>
+      {% if item.evidence %}
+      <details class="mt-3 group/ev">
+        <summary class="btn -ml-2.5 cursor-pointer list-none text-muted"><span class="transition-transform group-open/ev:rotate-90">›</span> Source text</summary>
+        {% for e in item.evidence %}<p class="mt-2 border-l-2 border-line pl-3 text-sm whitespace-pre-line text-muted">{{ e.excerpt.replace("**", "") }}</p>{% endfor %}
+      </details>
+      {% endif %}
+    </details>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

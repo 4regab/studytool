@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import deck_header, card_tag, crumb %}
+{% block title %}{{ deck.title }} · Review{% endblock %}
+{% block width %}max-w-6xl{% endblock %}
+{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
+{% block content %}
+{{ deck_header(deck, tab, counts) }}
+{% include "_filters.html" %}
+
+{% if not rows %}
+  <p class="py-20 text-center text-lg">No cards match these filters.</p>
+{% else %}
+<div class="sticky top-11 z-10 mt-4 flex flex-wrap items-center gap-2 bg-white py-2 text-sm">
+  <span class="text-muted" data-selected-count>{{ total }} card{{ 's' if total != 1 }}</span>
+  <button class="btn btn-sm btn-primary hidden" data-bulk="selected">Approve selected</button>
+  {% if counts.to_review %}<button class="btn btn-sm btn-outline ml-auto" data-bulk="all" data-deck="{{ deck.id }}">Approve all {{ counts.to_review }} to review</button>{% endif %}
+</div>
+
+<div class="divider text-sm" role="table" aria-label="Cards" data-table data-deck="{{ deck.id }}">
+  <div class="hidden grid-cols-[2rem_1fr_1fr_7rem_4.5rem] border-b border-line py-1.5 text-[13px] text-muted md:grid" role="row">
+    <span role="columnheader"><input type="checkbox" class="size-3.5 accent-accent" data-select-all aria-label="Select all"></span>
+    <span role="columnheader">Front</span><span role="columnheader">Back</span><span role="columnheader">Status</span><span class="sr-only" role="columnheader">Actions</span>
+  </div>
+  {% for item in rows %}{% set c = item.card %}
+  <div class="group grid grid-cols-[2rem_1fr] gap-x-2 gap-y-1 border-b border-line py-2 hover:bg-wash md:grid-cols-[2rem_1fr_1fr_7rem_4.5rem] md:gap-x-3"
+       role="row" data-row data-card-id="{{ c.id }}">
+    <span class="row-span-3 pt-1.5 md:row-span-1" role="cell"><input type="checkbox" class="size-3.5 accent-accent" data-select aria-label="Select card"></span>
+    <span role="cell"><label class="sr-only" for="front-{{ c.id }}">Front</label>
+      <textarea id="front-{{ c.id }}" rows="1" class="plain mx-0 font-medium" data-field="front" data-autosize>{{ c.front }}</textarea></span>
+    <span role="cell"><label class="sr-only" for="back-{{ c.id }}">Back</label>
+      <textarea id="back-{{ c.id }}" rows="1" class="plain mx-0" data-field="back" data-autosize>{{ c.back }}</textarea></span>
+    <span class="flex items-start gap-2 pt-1" role="cell">
+      <span data-status {% if item.reasons %}title="{{ item.reasons|join(' ') }}"{% endif %}>{{ card_tag(c.status) }}</span>
+      <a class="text-[12px] text-faint hover:text-ink" href="?view=card&{{ query }}&card={{ c.id }}" title="Open card">p.{{ item.pages|join(",") }}</a>
+    </span>
+    <span class="flex items-start gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" role="cell">
+      <button class="btn btn-sm" data-action="approve" title="Approve" aria-label="Approve card">✓</button>
+      <button class="btn btn-sm" data-action="reject" title="Reject" aria-label="Reject card">✕</button>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% if pages > 1 %}
+<nav class="mt-6 flex items-center justify-center gap-2 text-sm" aria-label="Table pages">
+  {% if p > 1 %}<a class="btn btn-sm" href="?view=table&{{ query }}&p={{ p - 1 }}">← Previous</a>{% endif %}
+  <span class="text-muted">{{ p }} / {{ pages }}</span>
+  {% if p < pages %}<a class="btn btn-sm" href="?view=table&{{ query }}&p={{ p + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% endif %}
+{% endblock %}

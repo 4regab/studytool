@@ -27,6 +27,39 @@ def _worker_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
+def _holder_is_dead(holder_id: str) -> bool:
+    """True if the lease holder ran on this computer and its process no longer exists.
+
+    A worker killed without cleanup (crash, End Task) leaves a fresh-looking lease for up to
+    WORKER_STALE_SECONDS; without this check a relaunch in that window exits at once.
+    ponytail: a reused PID looks alive, which only falls back to waiting for the stale timeout.
+    """
+    try:
+        host, pid, _ = holder_id.rsplit("-", 2)
+        pid = int(pid)
+    except ValueError:
+        return False
+    if host != socket.gethostname() or pid == os.getpid():
+        return False
+    if os.name == "nt":
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return True
+        code = ctypes.c_ulong()
+        k32.GetExitCodeProcess(handle, ctypes.byref(code))
+        k32.CloseHandle(handle)
+        return code.value != 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)  # POSIX: signal 0 only checks the process exists
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
 def _acquire_lease(conn, worker_id: str) -> bool:
     """Take worker_lease id=1 if absent or stale. One short BEGIN IMMEDIATE transaction."""
     with db.tx(conn):
@@ -35,7 +68,7 @@ def _acquire_lease(conn, worker_id: str) -> bool:
             age = conn.execute(
                 "SELECT (julianday('now') - julianday(?)) * 86400.0 AS age", (row["heartbeat"],)
             ).fetchone()["age"]
-            if age is not None and age < config.WORKER_STALE_SECONDS:
+            if age is not None and age < config.WORKER_STALE_SECONDS and not _holder_is_dead(row["worker_id"]):
                 return False  # someone else is alive
             conn.execute(
                 "UPDATE worker_lease SET worker_id = ?, heartbeat = datetime('now') WHERE id = 1",

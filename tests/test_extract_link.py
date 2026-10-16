@@ -152,3 +152,18 @@ def test_link_does_not_mutate_inputs():
     key_entries = [AnswerKeyEntry(section_key="A", question_number="1", answer="a", page_number=3, excerpt="1-(a)")]
     link_answers(items, key_entries)
     assert items[0].resolved_answer is None  # original untouched
+
+
+def test_two_column_page_reads_left_column_first(tmp_path):
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((300, 100), "RIGHT TOP")
+    page.insert_text((50, 120), "LEFT TOP")
+    page.insert_text((50, 400), "LEFT BOTTOM")
+    page.insert_text((300, 380), "RIGHT BOTTOM")
+    path = tmp_path / "cols.pdf"
+    doc.save(path)
+    doc.close()
+    text = extract_page(path, 1).text
+    order = [text.index(s) for s in ("LEFT TOP", "LEFT BOTTOM", "RIGHT TOP", "RIGHT BOTTOM")]
+    assert order == sorted(order)
