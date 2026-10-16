@@ -7,11 +7,11 @@ Turns study PDFs into standalone question-and-answer cards and exports them as a
 
 1. Install [uv](https://docs.astral.sh/uv/).
 2. In this folder, run `uv sync` to install the pinned dependencies.
-3. Set your AI key. The app sends the text of the pages you select to DeepSeek.
-
-   ```powershell
-   $env:DEEPSEEK_API_KEY = "your-key"   # optional: $env:STUDYTOOL_DEEPSEEK_MODEL = "deepseek-flash"
-   ```
+3. Start the app (below), open **Settings** (top right), pick DeepSeek, Google Gemini or OpenRouter,
+   and paste your API key. The app sends the text and images of the pages you select to that provider.
+   You can also change the model and the card-writing prompt there. Keys are saved only on this
+   computer, in `data/settings.json`. The `DEEPSEEK_API_KEY`, `GEMINI_API_KEY` and `OPENROUTER_API_KEY`
+   environment variables still work if you prefer them.
 
 ## Run
 
@@ -30,8 +30,8 @@ Data lives in `data/` (set `STUDYTOOL_DATA_DIR` to move it). Use `STUDYTOOL_PORT
 1. **Documents:** upload a PDF. Pick the content pages and, if the answers are elsewhere,
    the answer-key pages. Start with a small pilot range (2-5 pages) to check quality and cost.
 2. **Processing:** watch progress. Cancel or retry failed steps here.
-3. **Review:** edit, approve, or reject each card next to its source page.
-   Cards with flags need a short note before you can approve them.
+3. **Review:** edit, approve, or reject cards in the table, one at a time or in bulk.
+   Click a card's page number to open its source page.
 4. **Export:** download an Anki deck file (`.apkg`) or a CSV. Both contain approved cards only.
 
 ## Import into Anki

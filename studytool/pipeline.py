@@ -19,7 +19,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from studytool import ai, config, db, extract, generate, jobs, link, segment, validate
+from studytool import ai, config, db, extract, generate, jobs, link, segment, settings, validate
 from studytool.schemas import AnswerKeyEntry, ModelUsage, PageExtract, SegmentResult, SourceItem
 
 log = logging.getLogger("studytool.pipeline")
@@ -223,8 +223,8 @@ def _record_usage(conn, step_id: int, usage: list[ModelUsage]) -> None:
     for u in usage:
         cost = u.estimated_cost
         if cost is None and u.input_tokens is not None and u.output_tokens is not None:
-            cost = (u.input_tokens / 1_000_000) * config.PRICE_IN_PER_M + \
-                   (u.output_tokens / 1_000_000) * config.PRICE_OUT_PER_M
+            s = settings.active()
+            cost = (u.input_tokens / 1_000_000) * s["price_in"] + (u.output_tokens / 1_000_000) * s["price_out"]
         conn.execute(
             "INSERT INTO model_calls (job_step_id, provider, model, prompt_version, "
             "token_usage_json, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)",

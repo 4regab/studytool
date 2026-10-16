@@ -36,7 +36,10 @@
       </div>
 
       <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-        <p class="hint flex items-center gap-1.5">{{ icon("sparkles", "size-3.5 text-faint") }}Page text is sent to DeepSeek. This costs a little per page.</p>
+        {% set ai = ai_info() %}
+        <p class="hint flex items-center gap-1.5">{{ icon("sparkles", "size-3.5 text-faint") }}
+          {% if ai.has_key %}Page text is sent to {{ ai.label }} ({{ ai.model }}). This costs a little per page.
+          {% else %}<span class="text-warn">No API key yet. <a class="link" href="/settings">Add one in Settings</a> before creating a deck.</span>{% endif %}</p>
         <button class="btn btn-primary">Create deck</button>
       </div>
     </form>

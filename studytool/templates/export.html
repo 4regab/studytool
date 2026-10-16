@@ -57,7 +57,7 @@
     </li>
     {% endfor %}
   </ul>
-  {% if pv.approved|length > 4 %}<a href="/decks/{{ deck.id }}/review?view=table&status=approved" class="btn btn-ghost mt-2 -ml-3">See all {{ pv.approved|length }} {{ icon("right", "size-3.5") }}</a>{% endif %}
+  {% if pv.approved|length > 4 %}<a href="/decks/{{ deck.id }}/review?status=approved" class="btn btn-ghost mt-2 -ml-3">See all {{ pv.approved|length }} {{ icon("right", "size-3.5") }}</a>{% endif %}
 </section>
 {% endif %}
 {% endblock %}

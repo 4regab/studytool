@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Settings · Flashcards{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Settings</h1>
+<p class="mt-1 text-muted">Choose the AI that writes your cards. Changes apply to the next AI call; no restart needed.</p>
+
+{% if saved %}<p class="callout mt-5 bg-good-soft text-good" role="status">{{ icon("check", "size-4 mt-0.5") }}<span>Settings saved.</span></p>{% endif %}
+{% if settings_error %}<p class="callout callout-bad mt-5" role="alert">{{ icon("alert", "size-4 mt-0.5") }}<span>{{ settings_error }}</span></p>{% endif %}
+
+<form method="post" action="/settings" class="mt-6 space-y-6" data-settings autocomplete="off">
+  <input type="hidden" name="csrf" value="{{ csrf_token }}">
+
+  <section class="surface p-5 sm:p-6" aria-labelledby="prov-h">
+    <h2 id="prov-h" class="font-semibold">AI provider</h2>
+    <p class="hint mt-0.5">Page text and images from your PDFs are sent to this provider.</p>
+    <div class="mt-4 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="prov-h">
+      {% for p in providers %}
+      <label class="group relative flex cursor-pointer flex-col rounded-lg border border-line-strong bg-white p-3 transition-colors hover:border-faint has-[:checked]:border-accent has-[:checked]:bg-accent-soft/50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent/55">
+        <input type="radio" name="provider" value="{{ p.id }}" class="sr-only" {% if provider == p.id %}checked{% endif %} data-provider-radio>
+        <span class="flex items-center gap-2 text-sm font-medium">{{ p.label }}
+          <span class="ml-auto grid size-4 place-items-center rounded-full border border-line-strong group-has-[:checked]:border-accent group-has-[:checked]:bg-accent">
+            <span class="size-1.5 rounded-full bg-white opacity-0 group-has-[:checked]:opacity-100"></span></span></span>
+        <span class="mt-1 text-[12px] {{ 'text-good' if p.has_key else 'text-muted' }}">{{ "Key saved" if p.has_key else "No key yet" }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% for p in providers %}
+  <section class="surface p-5 sm:p-6" aria-labelledby="h-{{ p.id }}" data-provider-panel="{{ p.id }}" {% if provider != p.id %}hidden{% endif %}>
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 id="h-{{ p.id }}" class="font-semibold">{{ p.label }}</h2>
+      <a href="{{ p.keys_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost ml-auto">Get an API key {{ icon("right", "size-3.5") }}</a>
+    </div>
+    <div class="mt-4 space-y-5">
+      <div>
+        <label for="key_{{ p.id }}" class="label">API key</label>
+        <input id="key_{{ p.id }}" name="key_{{ p.id }}" type="password" class="field mt-1.5 font-mono" spellcheck="false" autocomplete="new-password"
+               placeholder="{{ ('Saved key ending in ' ~ p.key_hint ~ ' · type to replace') if p.has_key else 'Paste your key' }}" aria-describedby="keyhint_{{ p.id }}">
+        <p id="keyhint_{{ p.id }}" class="hint mt-1.5">
+          {% if p.from_env %}Using the {{ p.env }} environment variable. A key saved here takes its place.
+          {% else %}Stored only on this computer, in <code class="font-mono text-[12px]">data/settings.json</code>. Leave blank to keep the saved key.{% endif %}
+        </p>
+        {% if p.has_key and not p.from_env %}
+        <label class="mt-2 inline-flex cursor-pointer items-center gap-2 text-[13px] text-muted"><input type="checkbox" name="remove_key_{{ p.id }}" value="1" class="size-4 accent-bad">Remove saved key</label>
+        {% endif %}
+      </div>
+      <div>
+        <label for="model_{{ p.id }}" class="label">Model</label>
+        <input id="model_{{ p.id }}" name="model_{{ p.id }}" class="field mt-1.5 font-mono" value="{{ p.model }}" spellcheck="false" aria-describedby="modelhint_{{ p.id }}">
+        <p id="modelhint_{{ p.id }}" class="hint mt-1.5">
+          {% if p.id == "openrouter" %}Any OpenRouter model id, e.g. <code class="font-mono text-[12px]">openrouter/auto</code>. Pick one that accepts images and JSON output.
+          {% elif p.id == "gemini" %}A Gemini model name, e.g. <code class="font-mono text-[12px]">gemini-3.8-flash</code>.
+          {% else %}A DeepSeek model name, e.g. <code class="font-mono text-[12px]">deepseek-flash</code>. Scanned pages need a model that reads images.{% endif %}
+        </p>
+      </div>
+      <fieldset>
+        <legend class="label">Price per million tokens <span class="font-normal text-muted">· for cost estimates only</span></legend>
+        <div class="mt-1.5 grid grid-cols-2 gap-3 sm:max-w-sm">
+          <label class="block"><span class="hint">Input, $</span>
+            <input name="price_in_{{ p.id }}" inputmode="decimal" class="field mt-1 tabular-nums" value="{{ p.price.in }}"></label>
+          <label class="block"><span class="hint">Output, $</span>
+            <input name="price_out_{{ p.id }}" inputmode="decimal" class="field mt-1 tabular-nums" value="{{ p.price.out }}"></label>
+        </div>
+        <p class="hint mt-1.5">Leave at 0 if you don't know them. Cost estimates then show $0.00.</p>
+      </fieldset>
+    </div>
+  </section>
+  {% endfor %}
+
+  <section class="surface p-5 sm:p-6" aria-labelledby="prompt-h">
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 id="prompt-h" class="font-semibold">Card-writing prompt</h2>
+      {% if custom_prompt %}<span class="tag tag-blue">Custom</span>{% else %}<span class="tag tag-gray">Default</span>{% endif %}
+    </div>
+    <p class="hint mt-0.5">The instructions the AI follows when it turns a question into cards. Reading and splitting pages uses a fixed prompt.</p>
+    <label for="card_prompt" class="sr-only">Card-writing prompt</label>
+    <textarea id="card_prompt" name="card_prompt" rows="14" spellcheck="false" class="field mt-4 h-auto py-2.5 font-mono text-[12.5px] leading-relaxed">{{ card_prompt }}</textarea>
+    <p class="hint mt-1.5">The rule that PDF text is data, never instructions, is always added back if you remove it. New prompts apply to cards written from now on.</p>
+    {% if custom_prompt %}<label class="mt-3 inline-flex cursor-pointer items-center gap-2 text-[13px] text-muted"><input type="checkbox" name="reset_prompt" value="1" class="size-4 accent-accent">Go back to the default prompt</label>{% endif %}
+  </section>
+
+  <div class="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-2 border-t border-line bg-wash/90 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6">
+    <p class="hint mr-auto">Save first, then test the saved settings.</p>
+    <button type="button" class="btn btn-outline" data-test-settings>{{ icon("sparkles", "size-3.5") }}Test connection</button>
+    <button class="btn btn-primary">Save settings</button>
+  </div>
+</form>
+{% endblock %}

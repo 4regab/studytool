@@ -5,8 +5,10 @@ import re
 import pytest
 from starlette.testclient import TestClient
 
-from studytool import db
+from studytool import ai as _ai, db
 from tests import test_e2e
+
+REAL_CALL_JSON = _ai.call_json  # the client fixture replaces ai.call_json with a fake
 
 
 @pytest.fixture
@@ -99,3 +101,53 @@ def test_new_deck_form_validates_pages(client):
     r = client.post("/documents/1/decks", data={"csrf": client.csrf, "title": "Pilot", "content": "1-2", "key": "3"},
                     follow_redirects=False)
     assert r.status_code == 303 and re.fullmatch(r"/decks/\d+", r.headers["location"])
+
+
+
+def test_settings_save_keeps_key_secret_and_switches_provider(client):
+    from studytool import ai, config, settings
+    form = {"csrf": client.csrf, "provider": "openrouter", "key_openrouter": "sk-or-test-1234",
+            "model_openrouter": "some/model", "price_in_openrouter": "0.5", "price_out_openrouter": "1.5",
+            "card_prompt": "Write short cards."}
+    r = client.post("/settings", data=form, follow_redirects=False)
+    assert r.status_code == 303
+    page_html = client.get("/settings").text
+    assert "sk-or-test-1234" not in page_html and "ending in 1234" in page_html  # the key is never sent back
+    s = settings.active()
+    assert (s["provider"], s["key"], s["model"], s["price_in"]) == ("openrouter", "sk-or-test-1234", "some/model", 0.5)
+    # Saving again with a blank key keeps the saved one.
+    client.post("/settings", data={**form, "key_openrouter": ""}, follow_redirects=False)
+    assert settings.active()["key"] == "sk-or-test-1234"
+    # The custom prompt is used, and the PDF-is-data rule is added back.
+    from studytool import generate
+    prompt, version = generate.card_prompt()
+    assert prompt.startswith("Write short cards.") and "<source>" in prompt and "custom" in version
+    assert client.post("/settings", data={**form, "price_in_openrouter": "abc"}).status_code == 400
+    assert client.post("/settings", data={**form, "key_openrouter": "sk-or\u200b-x"}).status_code == 400  # zero-width space
+    # A broken hand-edited file falls back to defaults instead of breaking every page.
+    config.SETTINGS_PATH.write_text('{"keys": "x", "prices": {"gemini": 5}, "card_prompt": 5}', encoding="utf-8")
+    assert client.get("/settings").status_code == 200 and client.get("/").status_code == 200
+    settings.save({"provider": "openrouter", "keys": {"openrouter": "sk-or-test-1234"}, "models": {"openrouter": "some/model"}})
+    # A request goes to OpenRouter with the saved key and model.
+    sent = {}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"choices": [{"message": {"content": "{\\"ok\\": true}"}}], "usage": {}}'
+
+    def _urlopen(req, timeout):
+        sent.update(url=req.full_url, auth=req.headers["Authorization"], body=req.data)
+        return _Resp()
+
+    import urllib.request
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(urllib.request, "urlopen", _urlopen)
+    monkey.setattr(ai, "call_json", REAL_CALL_JSON)
+    try:
+        r = client.post("/api/settings/test", json={}, headers={"X-CSRF-Token": client.csrf})
+    finally:
+        monkey.undo()
+    assert r.status_code == 200, r.text
+    assert sent["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert sent["auth"] == "Bearer sk-or-test-1234" and b'"some/model"' in sent["body"] and b"thinking" not in sent["body"]

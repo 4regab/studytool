@@ -8,6 +8,7 @@ the processing. It listens on 127.0.0.1 and has no login, so every request is ch
   approve cards or start paid AI jobs.
 """
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -15,6 +16,7 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
+from pydantic import BaseModel
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
@@ -25,7 +27,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from studytool import cards, config, db, documents, export, extract, jobs
+from studytool import ai, cards, config, db, documents, export, extract, generate, jobs, settings
 
 HERE = Path(__file__).parent
 CSRF_TOKEN = secrets.token_urlsafe(32)
@@ -156,6 +158,8 @@ def _worker_status() -> bool:
 
 
 templates.env.globals["worker_status"] = _worker_status
+templates.env.globals["ai_info"] = lambda: {k: v for k, v in settings.active().items() if k != "key"} | {
+    "has_key": bool(settings.active()["key"])}  # provider label/model for pages; never the key itself
 
 
 def progress(conn, deck: sqlite3.Row) -> dict:
@@ -380,36 +384,19 @@ async def progress_panel(request: Request):
 
 async def deck_review(request: Request):
     params = request.query_params
-    view = "table" if params.get("view") == "table" else "card"
     f = card_filters(params)
     with connection() as conn:
         deck = get_deck(conn, request.path_params["deck_id"])
         rows = filtered_cards(conn, deck["id"], f)
-        ctx = {"deck": dict(deck), "tab": "review", "view": view, "f": f, "total": len(rows),
+        ctx = {"deck": dict(deck), "tab": "review", "f": f, "total": len(rows),
                "counts": card_counts(conn, deck["id"]), "statuses": STATUSES, "types": ITEM_TYPES}
         query = "&".join(f"{k}={v}" for k, v in f.items() if v)
         ctx["query"] = query
-        if view == "table":
-            per = 50
-            pages = max(1, (len(rows) + per - 1) // per)
-            pg = min(max(int(params.get("p", "1")) if params.get("p", "1").isdigit() else 1, 1), pages)
-            ctx.update(rows=[card_view(conn, r) for r in rows[(pg - 1) * per: pg * per]], p=pg, pages=pages)
-            return page(request, "review_table.html", **ctx)
-        ids = [r["id"] for r in rows]
-        want = params.get("card", "")
-        current = None
-        if want.isdigit():
-            current = next((r for r in rows if r["id"] == int(want)), None) or conn.execute(
-                CARD_SQL + "WHERE c.id = ? AND c.deck_id = ?", (int(want), deck["id"])).fetchone()
-        if current is None and rows:
-            current = rows[0]
-        pos = ids.index(current["id"]) if current is not None and current["id"] in ids else -1
-        ctx.update(
-            item=card_view(conn, current) if current else None, pos=pos,
-            prev_id=ids[pos - 1] if pos > 0 else None,
-            next_id=ids[pos + 1] if 0 <= pos < len(ids) - 1 else (ids[0] if pos == -1 and ids else None),
-        )
-        return page(request, "review_card.html", **ctx)
+        per = 50
+        pages = max(1, (len(rows) + per - 1) // per)
+        pg = min(max(int(params.get("p", "1")) if params.get("p", "1").isdigit() else 1, 1), pages)
+        ctx.update(rows=[card_view(conn, r) for r in rows[(pg - 1) * per: pg * per]], p=pg, pages=pages)
+        return page(request, "review_table.html", **ctx)
 
 
 async def deck_export(request: Request):
@@ -520,6 +507,90 @@ async def health(request: Request):
     return PlainTextResponse("ok")
 
 
+# ---------- settings ----------
+
+def _settings_ctx(saved: bool = False, error_msg: str | None = None, form: dict | None = None) -> dict:
+    s = settings.load()
+    providers = [{"id": name, **p, "has_key": bool(s["keys"][name]), "key_hint": s["keys"][name][-4:] if s["keys"][name] else "",
+                  "from_env": bool(s["keys"][name]) and s["keys"][name] == os.environ.get(p["env"], "") and
+                              name not in (settings._raw().get("keys") or {}),
+                  "model": s["models"][name], "price": s["prices"][name]}
+                 for name, p in settings.PROVIDERS.items()]
+    return {"provider": (form or {}).get("provider", s["provider"]), "providers": providers,
+            "card_prompt": s["card_prompt"] or generate.DEFAULT_CARD_PROMPT,
+            "custom_prompt": bool(s["card_prompt"].strip()) and s["card_prompt"].strip() != generate.DEFAULT_CARD_PROMPT.strip(),
+            "saved": saved, "settings_error": error_msg, "nav": "settings"}
+
+
+async def settings_page(request: Request):
+    return page(request, "settings.html", **_settings_ctx(saved=request.query_params.get("saved") == "1"))
+
+
+async def save_settings(request: Request):
+    form = await check_post(request)
+    provider = str(form.get("provider", ""))
+    if provider not in settings.PROVIDERS:
+        return templates.TemplateResponse(request, "settings.html", _settings_ctx(error_msg="Choose a provider."),
+                                          status_code=400)
+    values: dict = {"provider": provider, "keys": {}, "models": {}, "prices": {}}
+    prompt = str(form.get("card_prompt", "")).replace("\r\n", "\n").strip()
+    try:
+        for name in settings.PROVIDERS:
+            key = str(form.get(f"key_{name}", "")).strip()
+            if form.get(f"remove_key_{name}"):
+                values["keys"][name] = None
+            elif key:
+                if not key.isascii() or any(c.isspace() for c in key) or len(key) > 400:
+                    raise SettingsError(f"The {settings.PROVIDERS[name]['label']} key looks wrong: it has spaces or unusual characters. Paste it again.")
+                values["keys"][name] = key
+            model = str(form.get(f"model_{name}", "")).strip()
+            if model:
+                values["models"][name] = model[:200]
+            prices = {}
+            for side in ("in", "out"):
+                raw = str(form.get(f"price_{side}_{name}", "")).strip().replace(",", ".")
+                if raw:
+                    try:
+                        v = float(raw)
+                    except ValueError:
+                        raise SettingsError("Prices must be numbers, e.g. 0.30.") from None
+                    if not 0 <= v < 10_000:
+                        raise SettingsError("Prices must be between 0 and 10000 dollars per million tokens.")
+                    prices[side] = v
+            if prices:
+                values["prices"][name] = prices
+    except SettingsError as exc:  # show the form again with what the user typed (keys are never echoed)
+        ctx = _settings_ctx(error_msg=str(exc), form={"provider": provider})
+        ctx["card_prompt"] = prompt or ctx["card_prompt"]
+        for p in ctx["providers"]:
+            p["model"] = str(form.get(f"model_{p['id']}", "")).strip() or p["model"]
+            p["price"] = {side: form.get(f"price_{side}_{p['id']}", p["price"][side]) for side in ("in", "out")}
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=400)
+    values["card_prompt"] = "" if form.get("reset_prompt") or prompt == generate.DEFAULT_CARD_PROMPT.strip() else prompt[:20000]
+    settings.save(values)
+    return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+class SettingsError(ValueError):
+    """A settings form value the user must fix; the message is shown on the page."""
+
+
+class _Ping(BaseModel):
+    ok: bool
+
+
+async def api_test_settings(request: Request):
+    """Send one tiny request with the saved settings, so the user knows the key and model work."""
+    await check_post(request)
+    s = settings.active()
+    try:
+        await run_in_threadpool(ai.call_json, "You check that an API connection works.",
+                                'Reply with {"ok": true}.', _Ping, "settings-test", None, 0)
+    except ai.AIError as exc:
+        return error(str(exc)[:400])
+    return JSONResponse({"ok": True, "message": f"{s['label']} works with model {s['model']}."})
+
+
 # ---------- app ----------
 
 class HostCheck:
@@ -557,6 +628,9 @@ app = Starlette(
     routes=[
         Route("/", home),
         Route("/health", health),
+        Route("/settings", settings_page),
+        Route("/settings", save_settings, methods=["POST"]),
+        Route("/api/settings/test", api_test_settings, methods=["POST"]),
         Route("/documents", upload, methods=["POST"]),
         Route("/documents/{doc_id:int}", document_page),
         Route("/documents/{doc_id:int}/decks", create_deck, methods=["POST"]),

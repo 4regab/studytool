@@ -13,7 +13,7 @@
 <body>
   <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 btn btn-outline">Skip to content</a>
   <header class="sticky top-0 z-30 border-b border-line bg-wash/85 backdrop-blur-md">
-    <nav class="mx-auto flex h-12 max-w-6xl items-center gap-1 px-3 text-sm sm:px-5" aria-label="Breadcrumb">
+    <nav class="mx-auto flex h-12 max-w-6xl items-center gap-1 px-3 text-sm sm:px-5" aria-label="Main">
       <a href="/" class="btn btn-sm shrink-0 gap-2 px-1.5 font-semibold text-ink">
         <span class="grid size-5 place-items-center rounded-md bg-accent text-white" aria-hidden="true">
           <span class="h-2.5 w-3 rounded-[2px] bg-white"></span>
@@ -21,12 +21,20 @@
         <span class="max-sm:sr-only">Flashcards</span>
       </a>
       {% block crumbs %}{% endblock %}
+      <span class="ml-auto flex shrink-0 items-center gap-2">
       {% if not worker_status() %}
-        <span class="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-bad-soft px-2.5 py-1 text-[12px] font-medium text-bad"
+        <span class="flex items-center gap-1.5 rounded-full bg-bad-soft px-2.5 py-1 text-[12px] font-medium text-bad"
               title="Processing is paused. Start the app with: uv run python run.py">
-          <span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>Worker stopped
+          <span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span><span class="max-sm:sr-only">Worker stopped</span>
         </span>
       {% endif %}
+      {% set ai = ai_info() %}
+      <a href="/settings" class="btn btn-sm {{ 'bg-warn-soft text-warn hover:bg-warn-soft' if not ai.has_key else 'text-muted hover:text-ink' }} {{ 'bg-hover text-ink' if nav == 'settings' }}"
+         title="{{ ai.label }} · {{ ai.model }}" {% if nav == 'settings' %}aria-current="page"{% endif %}>
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="max-sm:sr-only">{{ "Add API key" if not ai.has_key else ai.label }}</span>
+      </a>
+      </span>
     </nav>
   </header>
   <main id="main" class="mx-auto w-full {% block width %}max-w-4xl{% endblock %} px-4 pt-8 pb-28 sm:px-6 sm:pt-12">

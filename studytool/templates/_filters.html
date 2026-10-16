@@ -1,14 +1,16 @@
-{#- View switch and filters shared by the card and table views. Status chips are links; type and page submit the form. -#}
-{% from "_macros.html" import icon %}
+{#- Review filters. Status chips are links; type and page submit the form. -#}
 {%- set rest = ("&type=" ~ f.type if f.type else "") ~ ("&page=" ~ f.page if f.page else "") -%}
 <div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-3">
-  <nav class="segmented" aria-label="Review view">
-    <a href="?view=card&{{ query }}" {% if view == 'card' %}aria-current="page"{% endif %}>{{ icon("card", "size-3.5") }}One by one</a>
-    <a href="?view=table&{{ query }}" {% if view == 'table' %}aria-current="page"{% endif %}>{{ icon("table", "size-3.5") }}Table</a>
+  <nav class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] max-sm:w-[calc(100%+2rem)] sm:mx-0 sm:px-0" aria-label="Filter by status">
+    {% for value, label, n in [("to_review", "To review", counts.to_review), ("needs_review", "Flagged", counts.needs_review),
+                               ("approved", "Approved", counts.approved), ("rejected", "Rejected", counts.rejected), ("all", "All", counts.total)] %}
+      <a href="?status={{ value }}{{ rest }}" class="chip shrink-0" {% if f.status == value %}aria-current="true"{% endif %}>
+        {{ label }} <span class="count">{{ n }}</span>
+      </a>
+    {% endfor %}
   </nav>
 
   <form method="get" class="ml-auto flex items-center gap-2 text-sm max-sm:w-full" data-autosubmit>
-    <input type="hidden" name="view" value="{{ view }}">
     <input type="hidden" name="status" value="{{ f.status }}">
     <label class="sr-only" for="f-type">Question type</label>
     <select id="f-type" name="type" class="field h-8 w-auto min-w-0 cursor-pointer py-0 pr-8 text-[13px] max-sm:flex-1">
@@ -18,16 +20,7 @@
     <label class="sr-only" for="f-page">Source page</label>
     <input id="f-page" name="page" value="{{ f.page }}" inputmode="numeric" placeholder="Page" autocomplete="off"
            class="field h-8 w-20 text-[13px] tabular-nums">
-    {% if f.type or f.page %}<a href="?view={{ view }}&status={{ f.status }}" class="btn btn-sm btn-ghost">Clear</a>{% endif %}
+    {% if f.type or f.page %}<a href="?status={{ f.status }}" class="btn btn-sm btn-ghost">Clear</a>{% endif %}
     <noscript><button class="btn btn-sm btn-outline">Apply</button></noscript>
   </form>
 </div>
-
-<nav class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0" aria-label="Filter by status">
-  {% for value, label, n in [("to_review", "To review", counts.to_review), ("needs_review", "Flagged", counts.needs_review),
-                             ("approved", "Approved", counts.approved), ("rejected", "Rejected", counts.rejected), ("all", "All", counts.total)] %}
-    <a href="?view={{ view }}&status={{ value }}{{ rest }}" class="chip shrink-0" {% if f.status == value %}aria-current="true"{% endif %}>
-      {{ label }} <span class="count">{{ n }}</span>
-    </a>
-  {% endfor %}
-</nav>

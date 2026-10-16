@@ -7,12 +7,11 @@ If either process exits, the other is stopped too. Ctrl+C stops both.
 `uv run python run.py --streamlit` starts the old Streamlit screen instead (kept until the
 new web app is confirmed; it will be removed).
 """
-import os
 import subprocess
 import sys
 import time
 
-from studytool import config, db
+from studytool import config, db, settings
 
 
 def main() -> None:
@@ -20,8 +19,8 @@ def main() -> None:
     db.migrate(conn)
     conn.close()
 
-    if not os.environ.get("DEEPSEEK_API_KEY"):
-        print("Warning: DEEPSEEK_API_KEY is not set. AI calls will fail until it is configured.")
+    if not settings.active()["key"]:
+        print("Note: no AI API key yet. Add one on the Settings page before creating a deck.")
 
     if "--streamlit" in sys.argv:
         ui_cmd = [sys.executable, "-m", "streamlit", "run", "app.py",

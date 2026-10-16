@@ -8,6 +8,7 @@ DB_PATH = Path(os.environ.get("STUDYTOOL_DB", DATA_DIR / "studytool.db"))
 PDF_DIR = DATA_DIR / "pdfs"
 PAGE_IMG_DIR = DATA_DIR / "pages"
 EXPORT_DIR = DATA_DIR / "exports"
+SETTINGS_PATH = DATA_DIR / "settings.json"  # AI provider, keys, model and prompt chosen in the app
 
 HOST = os.environ.get("STUDYTOOL_HOST", "127.0.0.1")  # loopback only by default
 PORT = int(os.environ.get("STUDYTOOL_PORT", "8501"))

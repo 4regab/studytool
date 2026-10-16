@@ -84,14 +84,7 @@
   .tag-red { @apply bg-bad-soft text-bad; }
   .tag-blue { @apply bg-accent-soft text-accent-dark; }
 
-  /* Pill controls: the view switch and the status filter. */
-  .segmented { @apply inline-flex rounded-lg bg-hover p-0.5; }
-  .segmented > :is(a, button) {
-    @apply inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted select-none hover:text-ink;
-    transition: transform 160ms var(--ease-out), color 150ms ease;
-  }
-  .segmented > :is(a, button):active { transform: scale(0.97); }
-  .segmented > [aria-current], .segmented > [aria-pressed="true"] { @apply bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]; }
+  /* Status filter pills. */
   .chip {
     @apply inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-white px-2.5 text-[13px] text-muted
       hover:border-line-strong hover:text-ink;

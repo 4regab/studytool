@@ -1,5 +1,5 @@
 // Small progressive enhancements. Pages render on the server; this adds live progress,
-// instant card actions, auto-saving edits and keyboard shortcuts.
+// instant card actions, auto-saving edits, the upload drop zone and the settings page.
 "use strict";
 
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
@@ -60,8 +60,6 @@ function tag(status) {
   el.textContent = name;
   return el;
 }
-
-const typing = (el) => el && (["TEXTAREA", "INPUT", "SELECT"].includes(el.tagName) || el.isContentEditable);
 
 // Text boxes grow with their content, like text on a page.
 function autosize(el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
@@ -200,75 +198,23 @@ document.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message, "error"); btn.disabled = false; }
 });
 
-// ---------- review: one card at a time ----------
+// ---------- settings ----------
 
-const card = document.querySelector("[data-review-card]");
-if (card) {
-  const id = card.dataset.cardId;
-  const front = card.querySelector('[data-field="front"]');
-  const back = card.querySelector('[data-field="back"]');
-  const saved = { front: front.value, back: back.value };
-  const saveState = card.querySelector("[data-save-state]");
-  let saving = Promise.resolve();
-
-  // Edits save on their own: when a box loses focus, and before any action or move.
-  function save() {
-    if (front.value === saved.front && back.value === saved.back) return saving;
-    const values = { front: front.value, back: back.value };
-    if (saveState) saveState.textContent = "Saving…";
-    saving = saving.then(() => post(`/api/cards/${id}/edit`, values)).then(() => {
-      Object.assign(saved, values);
-      if (saveState) saveState.textContent = "Saved";
-    });
-    saving.catch((err) => { if (saveState) saveState.textContent = ""; toast(err.message, "error"); });
-    return saving;
-  }
-  [front, back].forEach((el) => el.addEventListener("blur", save));
-
-  async function go(url) {
-    if (!url) return;
-    try { await save(); location.href = url; } catch { /* error already shown */ }
-  }
-
-  let busy = false; // one action at a time, so a double press can't skip a card
-  async function act(action) {
-    if (busy) return;
-    busy = true;
-    const btn = card.querySelector(`[data-action="${action}"]`);
-    if (btn) btn.disabled = true;
-    try {
-      await save();
-      const data = await post(`/api/cards/${id}/${action}`);
-      if (action === "regenerate") { toast(data.message); busy = false; if (btn) btn.disabled = false; return; }
-      location.href = card.dataset.next;
-    } catch (err) { toast(err.message, "error"); busy = false; if (btn) btn.disabled = false; }
-  }
-
-  card.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => act(b.dataset.action)));
-  card.querySelectorAll("a[data-nav]").forEach((a) => a.addEventListener("click", (e) => {
-    e.preventDefault();
-    if (!a.classList.contains("pointer-events-none")) go(a.href);
-  }));
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && typing(document.activeElement)) { document.activeElement.blur(); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); act("approve"); return; }
-    if (typing(document.activeElement) || e.ctrlKey || e.metaKey || e.altKey) return;
-    const keys = {
-      a: () => act("approve"), r: () => act("reject"), e: () => front.focus(),
-      j: () => go(card.dataset.next), ArrowRight: () => go(card.dataset.next),
-      k: () => go(card.dataset.prev), ArrowLeft: () => go(card.dataset.prev),
-    };
-    if (keys[e.key]) { e.preventDefault(); keys[e.key](); }
+const settingsForm = document.querySelector("form[data-settings]");
+if (settingsForm) {
+  // Show only the chosen provider's key and model fields.
+  const show = () => {
+    const chosen = settingsForm.querySelector("[data-provider-radio]:checked")?.value;
+    settingsForm.querySelectorAll("[data-provider-panel]").forEach((p) => { p.hidden = p.dataset.providerPanel !== chosen; });
+  };
+  settingsForm.querySelectorAll("[data-provider-radio]").forEach((r) => r.addEventListener("change", show));
+  settingsForm.querySelector("[data-test-settings]").addEventListener("click", async (e) => {
+    const btn = e.currentTarget, label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Testing…';
+    try { toast((await post("/api/settings/test")).message); } catch (err) { toast(err.message, "error"); }
+    btn.disabled = false; btn.innerHTML = label;
   });
-
-  card.querySelectorAll("[data-show-page]").forEach((b) => b.addEventListener("click", () => {
-    card.querySelector("[data-page-img]").src = b.dataset.showPage;
-    card.querySelector("[data-page-link]").href = b.dataset.showPage;
-    card.querySelectorAll("[data-show-page]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  }));
-  // On phones the page image is long; start with it folded so the buttons stay near the card.
-  if (window.matchMedia("(max-width: 1023px)").matches) card.querySelector("[data-page-details]")?.removeAttribute("open");
 }
 
 // ---------- review: table ----------

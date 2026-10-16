@@ -9,8 +9,15 @@
 
 {% if not rows %}
   <div class="surface mt-6 flex flex-col items-center px-6 py-16 text-center">
-    <p class="text-lg font-semibold">No cards match these filters.</p>
-    <a href="?view=table&status=all" class="btn btn-outline mt-4">Show all cards</a>
+    {% if f.status == "to_review" and counts.total and not (f.type or f.page) %}
+      <span class="grid size-12 place-items-center rounded-full bg-good-soft text-good">{{ icon("check", "size-6") }}</span>
+      <p class="mt-4 text-lg font-semibold">All cards reviewed.</p>
+      <p class="hint mt-1">{{ counts.approved }} approved · {{ counts.rejected }} rejected</p>
+      {% if counts.approved %}<a href="/decks/{{ deck.id }}/export" class="btn btn-primary btn-lg mt-6">{{ icon("download") }}Export {{ counts.approved }} cards</a>{% endif %}
+    {% else %}
+      <p class="text-lg font-semibold">No cards match these filters.</p>
+      <a href="?status=all" class="btn btn-outline mt-4">Show all cards</a>
+    {% endif %}
   </div>
 {% else %}
 <div class="sticky top-12 z-20 -mx-4 mt-3 flex flex-wrap items-center gap-2 bg-wash/90 px-4 py-2 text-sm backdrop-blur-md sm:-mx-6 sm:px-6">
@@ -32,22 +39,27 @@
       <textarea id="front-{{ c.id }}" rows="1" class="plain mx-0 font-medium" data-field="front" data-autosize>{{ c.front }}</textarea></span>
     <span class="col-span-2 md:col-span-1" role="cell"><label class="sr-only" for="back-{{ c.id }}">Answer</label>
       <textarea id="back-{{ c.id }}" rows="1" class="plain mx-0 text-muted md:text-ink" data-field="back" data-autosize>{{ c.back }}</textarea></span>
-    <span class="flex items-center gap-2 md:items-start md:pt-1.5" role="cell">
-      <span data-status {% if item.reasons %}title="{{ item.reasons|join(' ') }}"{% endif %}>{{ card_tag(c.status) }}</span>
-      <a class="text-[12px] text-faint tabular-nums hover:text-ink" href="?view=card&{{ query }}&card={{ c.id }}" title="Open this card with its source page">p.{{ item.pages|join(",") }}</a>
+    <span class="flex flex-wrap items-center gap-x-2 gap-y-1 md:items-start md:pt-1.5" role="cell">
+      <span data-status>{{ card_tag(c.status) }}</span>
+      {% for pg in item.pages %}<a class="text-[12px] text-faint tabular-nums hover:text-ink" href="/documents/{{ c.document_id }}/pages/{{ pg }}.png" target="_blank" rel="noopener" title="Open source page {{ pg }}">p.{{ pg }}</a>{% endfor %}
     </span>
     <span class="flex items-center justify-end gap-0.5 md:items-start md:pt-0.5" role="cell">
       <button class="btn btn-sm btn-icon btn-ghost hover:bg-good-soft hover:text-good" data-action="approve" title="Approve" aria-label="Approve card">{{ icon("check") }}</button>
       <button class="btn btn-sm btn-icon btn-ghost hover:bg-bad-soft hover:text-bad" data-action="reject" title="Reject" aria-label="Reject card">{{ icon("x") }}</button>
     </span>
+    {% if item.reasons %}
+    <p class="col-span-2 col-start-2 flex items-start gap-1.5 text-[12px] text-warn md:col-span-3" role="cell">
+      {{ icon("alert", "size-3.5 mt-0.5") }}<span>{{ item.reasons|join(" ") }}</span>
+    </p>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
 {% if pages > 1 %}
 <nav class="mt-6 flex items-center justify-center gap-2 text-sm" aria-label="Table pages">
-  {% if p > 1 %}<a class="btn btn-sm btn-outline" href="?view=table&{{ query }}&p={{ p - 1 }}">{{ icon("left", "size-3.5") }}Previous</a>{% endif %}
+  {% if p > 1 %}<a class="btn btn-sm btn-outline" href="?{{ query }}&p={{ p - 1 }}">{{ icon("left", "size-3.5") }}Previous</a>{% endif %}
   <span class="px-2 text-muted tabular-nums">Page {{ p }} of {{ pages }}</span>
-  {% if p < pages %}<a class="btn btn-sm btn-outline" href="?view=table&{{ query }}&p={{ p + 1 }}">Next{{ icon("right", "size-3.5") }}</a>{% endif %}
+  {% if p < pages %}<a class="btn btn-sm btn-outline" href="?{{ query }}&p={{ p + 1 }}">Next{{ icon("right", "size-3.5") }}</a>{% endif %}
 </nav>
 {% endif %}
 {% endif %}
