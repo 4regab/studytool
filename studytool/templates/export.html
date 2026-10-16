@@ -1,30 +1,63 @@
 {% extends "base.html" %}
-{% from "_macros.html" import deck_header, crumb %}
-{% block title %}{{ deck.title }} · Export{% endblock %}
-{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
+{% from "_macros.html" import deck_header, crumb, card_meter, icon %}
+{% block title %}{{ deck.title|display }} · Export{% endblock %}
+{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename, wide=True) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
 {% block content %}
 {{ deck_header(deck, tab, cards) }}
-{% if export_error %}<p class="mt-6 rounded-md bg-[#fdebec] px-3 py-2 text-sm text-[#5d1715]" role="alert">{{ export_error }}</p>{% endif %}
+{% if export_error %}<p class="callout callout-bad mt-6" role="alert">{{ icon("alert", "size-4 mt-0.5") }}<span>{{ export_error }}</span></p>{% endif %}
 
-<p class="mt-8">{{ cards.approved }} approved card{{ 's' if cards.approved != 1 }} will be exported.
-  {% if cards.to_review %}<a class="text-muted underline decoration-line underline-offset-2 hover:text-ink" href="/decks/{{ deck.id }}/review">{{ cards.to_review }} still to review</a>{% endif %}</p>
-
-<div class="mt-6 divider">
-  <form method="post" action="/decks/{{ deck.id }}/export.apkg" class="flex flex-wrap items-center gap-4 border-b border-line py-4">
-    <input type="hidden" name="csrf" value="{{ csrf_token }}">
-    <div class="min-w-0 flex-1">
-      <p class="font-medium">Anki deck</p>
-      <p class="text-sm text-muted">Open the .apkg file and Anki adds the deck. Exporting again later updates the same cards.</p>
+<section class="surface mt-6 p-5 sm:p-6" aria-labelledby="sum-h">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h2 id="sum-h" class="text-[13px] text-muted">Ready to export</h2>
+      <p class="mt-0.5 text-3xl font-semibold tracking-tight tabular-nums">{{ cards.approved }} <span class="text-lg font-normal text-muted">approved card{{ 's' if cards.approved != 1 }}</span></p>
     </div>
-    <button class="btn btn-primary" {% if not cards.approved %}disabled{% endif %}>Download .apkg</button>
+    <dl class="flex gap-5 text-sm">
+      <div><dt class="text-[12px] text-muted">To review</dt><dd class="font-medium tabular-nums">{{ cards.to_review }}</dd></div>
+      <div><dt class="text-[12px] text-muted">Rejected</dt><dd class="font-medium tabular-nums">{{ cards.rejected }}</dd></div>
+      <div><dt class="text-[12px] text-muted">Total</dt><dd class="font-medium tabular-nums">{{ cards.total }}</dd></div>
+    </dl>
+  </div>
+  {% if cards.total %}{{ card_meter(cards, "mt-4") }}{% endif %}
+  <p class="hint mt-3">Only approved cards are exported.
+    {% if cards.to_review %}<a class="link text-ink" href="/decks/{{ deck.id }}/review">Review the other {{ cards.to_review }}</a> first if you want them included.{% endif %}</p>
+</section>
+
+<div class="mt-4 grid gap-4 sm:grid-cols-2">
+  <form method="post" action="/decks/{{ deck.id }}/export.apkg" class="surface flex flex-col p-5" data-download>
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <div class="flex items-center gap-2">
+      <span class="grid size-8 place-items-center rounded-lg bg-accent-soft text-accent">{{ icon("layers") }}</span>
+      <h2 class="font-semibold">Anki deck</h2>
+      <span class="tag tag-blue ml-auto">Recommended</span>
+    </div>
+    <p class="hint mt-3 flex-1">Double-click the .apkg file and Anki adds the deck. Exporting again later updates the same cards instead of adding copies.</p>
+    <button class="btn btn-primary mt-5 w-full" {% if not cards.approved %}disabled{% endif %}>{{ icon("download") }}Download .apkg</button>
   </form>
-  <form method="post" action="/decks/{{ deck.id }}/export.csv" class="flex flex-wrap items-center gap-4 border-b border-line py-4">
+  <form method="post" action="/decks/{{ deck.id }}/export.csv" class="surface flex flex-col p-5" data-download>
     <input type="hidden" name="csrf" value="{{ csrf_token }}">
-    <div class="min-w-0 flex-1">
-      <p class="font-medium">CSV</p>
-      <p class="text-sm text-muted">Anki: File › Import, type Basic, separator Comma, skip the first row.</p>
+    <div class="flex items-center gap-2">
+      <span class="grid size-8 place-items-center rounded-lg bg-hover text-muted">{{ icon("table") }}</span>
+      <h2 class="font-semibold">CSV file</h2>
     </div>
-    <button class="btn btn-outline" {% if not cards.approved %}disabled{% endif %}>Download .csv</button>
+    <p class="hint mt-3 flex-1">In Anki: File › Import, note type Basic, separator Comma, map field 1 to Front and 2 to Back, skip the first row.</p>
+    <button class="btn btn-outline mt-5 w-full" {% if not cards.approved %}disabled{% endif %}>{{ icon("download") }}Download .csv</button>
   </form>
 </div>
+
+{% if pv.approved %}
+<section class="mt-10" aria-labelledby="pv-h">
+  <h2 id="pv-h" class="font-semibold">What's inside</h2>
+  <p class="hint mt-0.5">The first {{ [pv.approved|length, 4]|min }} of {{ pv.approved|length }} cards.</p>
+  <ul class="mt-3 grid gap-3 sm:grid-cols-2">
+    {% for c in pv.approved[:4] %}
+    <li class="surface p-4">
+      <p class="text-sm font-medium text-pretty">{{ c.front }}</p>
+      <p class="mt-2 border-t border-dashed border-line-strong pt-2 text-sm text-muted">{{ c.back }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if pv.approved|length > 4 %}<a href="/decks/{{ deck.id }}/review?view=table&status=approved" class="btn btn-ghost mt-2 -ml-3">See all {{ pv.approved|length }} {{ icon("right", "size-3.5") }}</a>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

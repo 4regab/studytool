@@ -35,6 +35,16 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", config.HOST}
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["csrf_token"] = CSRF_TOKEN
 
+
+def display_name(name: str) -> str:
+    """'Book (z-library.sk, 1lib.sk).pdf' -> 'Book'. Only for display; stored names are unchanged."""
+    stem = re.sub(r"\.pdf$", "", name or "", flags=re.I)
+    stem = re.sub(r"\s*\([^()]*\b[\w-]+\.(?:sk|org|com|net|io|ru|is|li|me)\b[^()]*\)", "", stem)
+    return re.sub(r"\s+", " ", stem).strip() or (name or "")
+
+
+templates.env.filters["display"] = display_name
+
 STATUSES = ["draft", "needs_review", "approved", "rejected"]
 ITEM_TYPES = ["info_box", "mcq", "matching", "chronology", "statement", "assertion_reason"]
 STAGES = [  # (job_steps stage, label shown to the user)
@@ -314,7 +324,7 @@ async def document_page(request: Request):
         decks = [dict(d) | {"cards": card_counts(conn, d["id"])}
                  for d in conn.execute("SELECT * FROM decks WHERE document_id = ? ORDER BY id DESC", (doc_id,))]
         return page(request, "document.html", doc=dict(doc), decks=decks, nav="home",
-                    form={"title": Path(doc["filename"]).stem[:80], "content": f"1-{min(5, doc['page_count'])}", "key": ""})
+                    form={"title": display_name(doc["filename"])[:80], "content": f"1-{min(5, doc['page_count'])}", "key": ""})
 
 
 async def create_deck(request: Request):

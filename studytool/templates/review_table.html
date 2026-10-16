@@ -1,50 +1,53 @@
 {% extends "base.html" %}
-{% from "_macros.html" import deck_header, card_tag, crumb %}
-{% block title %}{{ deck.title }} · Review{% endblock %}
+{% from "_macros.html" import deck_header, card_tag, crumb, icon %}
+{% block title %}{{ deck.title|display }} · Review{% endblock %}
 {% block width %}max-w-6xl{% endblock %}
-{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
+{% block crumbs %}{{ crumb("/documents/" ~ deck.document_id, deck.filename, wide=True) }}{{ crumb("/decks/" ~ deck.id, deck.title) }}{% endblock %}
 {% block content %}
 {{ deck_header(deck, tab, counts) }}
 {% include "_filters.html" %}
 
 {% if not rows %}
-  <p class="py-20 text-center text-lg">No cards match these filters.</p>
+  <div class="surface mt-6 flex flex-col items-center px-6 py-16 text-center">
+    <p class="text-lg font-semibold">No cards match these filters.</p>
+    <a href="?view=table&status=all" class="btn btn-outline mt-4">Show all cards</a>
+  </div>
 {% else %}
-<div class="sticky top-11 z-10 mt-4 flex flex-wrap items-center gap-2 bg-white py-2 text-sm">
-  <span class="text-muted" data-selected-count>{{ total }} card{{ 's' if total != 1 }}</span>
-  <button class="btn btn-sm btn-primary hidden" data-bulk="selected">Approve selected</button>
-  {% if counts.to_review %}<button class="btn btn-sm btn-outline ml-auto" data-bulk="all" data-deck="{{ deck.id }}">Approve all {{ counts.to_review }} to review</button>{% endif %}
+<div class="sticky top-12 z-20 -mx-4 mt-3 flex flex-wrap items-center gap-2 bg-wash/90 px-4 py-2 text-sm backdrop-blur-md sm:-mx-6 sm:px-6">
+  <span class="text-muted tabular-nums" data-selected-count>{{ total }} card{{ 's' if total != 1 }}</span>
+  <button class="btn btn-sm btn-primary hidden" data-bulk="selected">{{ icon("check", "size-3.5") }}Approve selected</button>
+  {% if counts.to_review %}<button class="btn btn-sm btn-outline ml-auto" data-bulk="all" data-deck="{{ deck.id }}">{{ icon("check", "size-3.5") }}Approve all {{ counts.to_review }} to review</button>{% endif %}
 </div>
 
-<div class="divider text-sm" role="table" aria-label="Cards" data-table data-deck="{{ deck.id }}">
-  <div class="hidden grid-cols-[2rem_1fr_1fr_7rem_4.5rem] border-b border-line py-1.5 text-[13px] text-muted md:grid" role="row">
-    <span role="columnheader"><input type="checkbox" class="size-3.5 accent-accent" data-select-all aria-label="Select all"></span>
-    <span role="columnheader">Front</span><span role="columnheader">Back</span><span role="columnheader">Status</span><span class="sr-only" role="columnheader">Actions</span>
+<div class="surface overflow-hidden text-sm" role="table" aria-label="Cards" data-table data-deck="{{ deck.id }}">
+  <div class="hidden grid-cols-[2.25rem_1fr_1fr_8rem_4.5rem] items-center gap-x-3 border-b border-line bg-wash/60 px-3 py-2 text-[12px] font-medium text-muted md:grid" role="row">
+    <span role="columnheader" class="grid place-items-center"><input type="checkbox" class="size-4 cursor-pointer accent-accent" data-select-all aria-label="Select all on this page"></span>
+    <span role="columnheader">Question</span><span role="columnheader">Answer</span><span role="columnheader">Status</span><span class="sr-only" role="columnheader">Actions</span>
   </div>
   {% for item in rows %}{% set c = item.card %}
-  <div class="group grid grid-cols-[2rem_1fr] gap-x-2 gap-y-1 border-b border-line py-2 hover:bg-wash md:grid-cols-[2rem_1fr_1fr_7rem_4.5rem] md:gap-x-3"
+  <div class="group grid grid-cols-[2.25rem_1fr_auto] gap-x-2 gap-y-1 border-b border-line px-3 py-2.5 transition-colors last:border-b-0 hover:bg-wash/70 has-[[data-select]:checked]:bg-accent-soft/50 md:grid-cols-[2.25rem_1fr_1fr_8rem_4.5rem] md:gap-x-3"
        role="row" data-row data-card-id="{{ c.id }}">
-    <span class="row-span-3 pt-1.5 md:row-span-1" role="cell"><input type="checkbox" class="size-3.5 accent-accent" data-select aria-label="Select card"></span>
-    <span role="cell"><label class="sr-only" for="front-{{ c.id }}">Front</label>
+    <span class="row-span-3 grid place-items-start justify-center pt-2 md:row-span-1" role="cell"><input type="checkbox" class="size-4 cursor-pointer accent-accent" data-select aria-label="Select card"></span>
+    <span class="col-span-2 md:col-span-1" role="cell"><label class="sr-only" for="front-{{ c.id }}">Question</label>
       <textarea id="front-{{ c.id }}" rows="1" class="plain mx-0 font-medium" data-field="front" data-autosize>{{ c.front }}</textarea></span>
-    <span role="cell"><label class="sr-only" for="back-{{ c.id }}">Back</label>
-      <textarea id="back-{{ c.id }}" rows="1" class="plain mx-0" data-field="back" data-autosize>{{ c.back }}</textarea></span>
-    <span class="flex items-start gap-2 pt-1" role="cell">
+    <span class="col-span-2 md:col-span-1" role="cell"><label class="sr-only" for="back-{{ c.id }}">Answer</label>
+      <textarea id="back-{{ c.id }}" rows="1" class="plain mx-0 text-muted md:text-ink" data-field="back" data-autosize>{{ c.back }}</textarea></span>
+    <span class="flex items-center gap-2 md:items-start md:pt-1.5" role="cell">
       <span data-status {% if item.reasons %}title="{{ item.reasons|join(' ') }}"{% endif %}>{{ card_tag(c.status) }}</span>
-      <a class="text-[12px] text-faint hover:text-ink" href="?view=card&{{ query }}&card={{ c.id }}" title="Open card">p.{{ item.pages|join(",") }}</a>
+      <a class="text-[12px] text-faint tabular-nums hover:text-ink" href="?view=card&{{ query }}&card={{ c.id }}" title="Open this card with its source page">p.{{ item.pages|join(",") }}</a>
     </span>
-    <span class="flex items-start gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" role="cell">
-      <button class="btn btn-sm" data-action="approve" title="Approve" aria-label="Approve card">✓</button>
-      <button class="btn btn-sm" data-action="reject" title="Reject" aria-label="Reject card">✕</button>
+    <span class="flex items-center justify-end gap-0.5 md:items-start md:pt-0.5" role="cell">
+      <button class="btn btn-sm btn-icon btn-ghost hover:bg-good-soft hover:text-good" data-action="approve" title="Approve" aria-label="Approve card">{{ icon("check") }}</button>
+      <button class="btn btn-sm btn-icon btn-ghost hover:bg-bad-soft hover:text-bad" data-action="reject" title="Reject" aria-label="Reject card">{{ icon("x") }}</button>
     </span>
   </div>
   {% endfor %}
 </div>
 {% if pages > 1 %}
 <nav class="mt-6 flex items-center justify-center gap-2 text-sm" aria-label="Table pages">
-  {% if p > 1 %}<a class="btn btn-sm" href="?view=table&{{ query }}&p={{ p - 1 }}">← Previous</a>{% endif %}
-  <span class="text-muted">{{ p }} / {{ pages }}</span>
-  {% if p < pages %}<a class="btn btn-sm" href="?view=table&{{ query }}&p={{ p + 1 }}">Next →</a>{% endif %}
+  {% if p > 1 %}<a class="btn btn-sm btn-outline" href="?view=table&{{ query }}&p={{ p - 1 }}">{{ icon("left", "size-3.5") }}Previous</a>{% endif %}
+  <span class="px-2 text-muted tabular-nums">Page {{ p }} of {{ pages }}</span>
+  {% if p < pages %}<a class="btn btn-sm btn-outline" href="?view=table&{{ query }}&p={{ p + 1 }}">Next{{ icon("right", "size-3.5") }}</a>{% endif %}
 </nav>
 {% endif %}
 {% endif %}

@@ -1,4 +1,27 @@
-{#- Shared bits: status tags, breadcrumbs, and the deck title with its view tabs. -#}
+{#- Shared bits: icons, status tags, breadcrumbs, and the deck title with its view tabs. -#}
+{% set ICONS = {
+  "check": '<path d="M20 6 9 17l-5-5"/>',
+  "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  "left": '<path d="m15 18-6-6 6-6"/>',
+  "right": '<path d="m9 18 6-6-6-6"/>',
+  "upload": '<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+  "download": '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+  "file": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
+  "sparkles": '<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/>',
+  "alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  "card": '<rect width="18" height="14" x="3" y="5" rx="2"/>',
+  "table": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/>',
+  "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  "resume": '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  "stop": '<rect width="12" height="12" x="6" y="6" rx="2"/>',
+  "layers": '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m2 12.65 9.17 4.16a2 2 0 0 0 1.66 0L22 12.65"/><path d="m2 17.65 9.17 4.16a2 2 0 0 0 1.66 0L22 17.65"/>',
+} %}
+
+{% macro icon(name, cls="size-4") -%}
+  <svg class="{{ cls }} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ ICONS[name]|safe }}</svg>
+{%- endmacro %}
+
 {% macro card_tag(status) -%}
   {%- set t = {"draft": ("tag-gray", "To review"), "needs_review": ("tag-orange", "Check"),
                "approved": ("tag-green", "Approved"), "rejected": ("tag-red", "Rejected")}.get(status, ("tag-gray", status)) -%}
@@ -10,22 +33,35 @@
   {%- else -%}
     {%- set t = {"queued": ("tag-blue", "Waiting"), "running": ("tag-blue", "Processing"), "completed": ("tag-green", "Done"),
                  "failed": ("tag-red", "Failed"), "cancelled": ("tag-gray", "Stopped")}.get(job.status) -%}
-    <span class="tag {{ t[0] }}">{{ t[1] }}</span>
+    <span class="tag {{ t[0] }}">{% if job.status == "running" %}<span class="spinner size-2.5 border-[1.5px]" aria-hidden="true"></span>{% endif %}{{ t[1] }}</span>
   {%- endif -%}
 {%- endmacro %}
 
-{% macro crumb(href, text) -%}
-  <span class="text-faint" aria-hidden="true">/</span>
-  <a href="{{ href }}" class="btn btn-sm min-w-0 truncate"><span class="truncate">{{ text }}</span></a>
+{#- `wide`: crumb hidden on phones, where only the last crumb fits. -#}
+{% macro crumb(href, text, wide=False) -%}
+  <span class="text-faint {{ 'max-sm:hidden' if wide }}" aria-hidden="true">/</span>
+  <a href="{{ href }}" class="btn btn-sm min-w-0 font-normal text-muted hover:text-ink {{ 'max-sm:hidden max-w-[22rem]' if wide else 'max-w-[18rem]' }}" title="{{ text }}"><span class="truncate">{{ text|display }}</span></a>
+{%- endmacro %}
+
+{#- Two-part bar: approved (green) and rejected (red) out of all cards. -#}
+{% macro card_meter(c, cls="") -%}
+  {%- set t = c.total or 1 -%}
+  <div class="meter {{ cls }}" role="img" aria-label="{{ c.approved }} of {{ c.total }} approved">
+    <span class="bg-good" style="width: {{ (100 * c.approved / t)|round(1) }}%"></span>
+    <span class="bg-bad/40" style="width: {{ (100 * c.rejected / t)|round(1) }}%"></span>
+  </div>
 {%- endmacro %}
 
 {% macro deck_header(deck, tab, counts=None) %}
-<h1 class="text-3xl font-bold tracking-tight break-words sm:text-4xl">{{ deck.title }}</h1>
-<nav class="mt-5 flex gap-4 border-b border-line text-sm" aria-label="Deck views">
+<p class="eyebrow">Deck</p>
+<h1 class="mt-1 text-2xl font-semibold tracking-tight break-words text-balance sm:text-3xl" title="{{ deck.title }}">{{ deck.title|display }}</h1>
+<nav class="mt-5 flex gap-1 border-b border-line text-sm" aria-label="Deck views">
   {% for key, label, href in [("progress", "Progress", ""), ("review", "Review", "/review"), ("export", "Export", "/export")] %}
     <a href="/decks/{{ deck.id }}{{ href }}" {% if tab == key %}aria-current="page"{% endif %}
-       class="-mb-px border-b-2 pb-2 {{ 'border-ink text-ink' if tab == key else 'border-transparent text-muted hover:text-ink' }}">
-      {{ label }}{% if key == "review" and counts and counts.to_review %} <span class="text-muted">{{ counts.to_review }}</span>{% endif %}
+       class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-2 pb-2.5 font-medium transition-colors {{ 'border-ink text-ink' if tab == key else 'border-transparent text-muted hover:text-ink' }}">
+      {{ label }}
+      {% if key == "review" and counts and counts.to_review %}<span class="tag tag-blue tabular-nums">{{ counts.to_review }}</span>{% endif %}
+      {% if key == "export" and counts and counts.approved %}<span class="tag tag-gray tabular-nums">{{ counts.approved }}</span>{% endif %}
     </a>
   {% endfor %}
 </nav>

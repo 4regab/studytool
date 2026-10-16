@@ -1,40 +1,83 @@
 {% extends "base.html" %}
-{% from "_macros.html" import job_tag %}
+{% from "_macros.html" import job_tag, card_meter, icon %}
 {% block content %}
-<div class="flex flex-wrap items-end justify-between gap-3">
-  <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Documents</h1>
+<div class="flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Documents</h1>
+    <p class="mt-1 text-muted">Turn study PDFs into Anki cards you can trust.</p>
+  </div>
   <form action="/documents" method="post" enctype="multipart/form-data" data-upload>
     <input type="hidden" name="csrf" value="{{ csrf_token }}">
-    <label class="btn btn-primary cursor-pointer">
-      <span data-upload-label>Upload PDF</span>
-      <input name="pdf" type="file" accept="application/pdf,.pdf" required class="sr-only">
+    <label class="btn btn-primary btn-lg focus-within:outline-2 focus-within:outline-accent/55 focus-within:outline-offset-2">
+      {{ icon("upload") }}<span data-upload-label>Upload PDF</span>
+      <input id="pdf-input" name="pdf" type="file" accept="application/pdf,.pdf" required class="sr-only">
     </label>
   </form>
 </div>
-<p class="mt-2 text-muted">Turn study PDFs into Anki cards. Upload a PDF, choose pages, review, export.</p>
-{% if upload_error %}<p class="mt-4 rounded-md bg-[#fdebec] px-3 py-2 text-sm text-[#5d1715]" role="alert">{{ upload_error }}</p>{% endif %}
+{% if upload_error %}<p class="callout callout-bad mt-5" role="alert">{{ icon("alert", "size-4 mt-0.5") }}<span>{{ upload_error }}</span></p>{% endif %}
 
-<div class="mt-8 divider">
-  {% for d in docs %}
-  <section class="border-b border-line py-3">
-    <a href="/documents/{{ d.id }}" class="-mx-2 flex items-baseline gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
-      <span class="min-w-0 flex-1 truncate font-medium">{{ d.filename }}</span>
-      <span class="shrink-0 text-sm text-muted">{{ d.page_count }} pages</span>
-    </a>
-    {% for k in d.decks %}
-    <a href="/decks/{{ k.id }}{{ '/review' if k.cards.to_review and k.job and k.job.status == 'completed' else '' }}"
-       class="-mx-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md py-1.5 pr-2 pl-6 text-sm hover:bg-hover">
-      <span class="min-w-0 flex-1 truncate">{{ k.title }}</span>
-      <span class="flex items-center gap-2 text-muted">
-        {% if k.job and k.job.status != "completed" %}{{ job_tag(k.job) }}{% endif %}
-        {% if k.cards.to_review %}<span>{{ k.cards.to_review }} to review</span>{% endif %}
-        <span>{{ k.cards.approved }}/{{ k.cards.total }} approved</span>
-      </span>
-    </a>
-    {% endfor %}
-  </section>
-  {% else %}
-  <p class="py-10 text-center text-muted">No documents yet. Upload a PDF, or drop one anywhere on this page.</p>
+{% if docs %}
+<ol class="mt-8 flex list-none gap-x-6 gap-y-2 text-[13px] text-muted max-sm:flex-col sm:items-center" aria-label="How it works">
+  {% for n, t in [(1, "Upload a PDF"), (2, "Pick pages"), (3, "Review cards"), (4, "Export to Anki")] %}
+  <li class="flex items-center gap-2"><span class="grid size-5 place-items-center rounded-full bg-white text-[11px] font-semibold text-ink ring-1 ring-line">{{ n }}</span>{{ t }}</li>
   {% endfor %}
+</ol>
+
+<div class="mt-5 space-y-4">
+  {% for d in docs %}
+  <section class="surface overflow-hidden" aria-labelledby="doc-{{ d.id }}">
+    <a href="/documents/{{ d.id }}" class="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-wash sm:px-5">
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">{{ icon("file", "size-[18px]") }}</span>
+      <span class="min-w-0 flex-1">
+        <span id="doc-{{ d.id }}" class="block truncate font-medium" title="{{ d.filename }}">{{ d.filename|display }}</span>
+        <span class="block text-[13px] text-muted">{{ d.page_count }} pages · {{ d.decks|length }} deck{{ 's' if d.decks|length != 1 }}</span>
+      </span>
+      <span class="btn btn-sm btn-ghost shrink-0 max-sm:btn-icon" aria-hidden="true">{{ icon("plus", "size-3.5") }}<span class="max-sm:hidden">New deck</span></span>
+    </a>
+    {% if d.decks %}
+    <ul class="divide-y divide-line border-t border-line">
+      {% for k in d.decks %}
+      {%- set running = k.job and k.job.status in ("queued", "running") -%}
+      {%- set stopped = k.job and k.job.status in ("failed", "cancelled") -%}
+      {%- if running or stopped or not k.cards.total -%}{%- set href, cta = "/decks/" ~ k.id, ("View progress" if running else "Resume" if stopped else "Open") -%}
+      {%- elif k.cards.to_review -%}{%- set href, cta = "/decks/" ~ k.id ~ "/review", "Review " ~ k.cards.to_review -%}
+      {%- elif k.cards.approved -%}{%- set href, cta = "/decks/" ~ k.id ~ "/export", "Export" -%}
+      {%- else -%}{%- set href, cta = "/decks/" ~ k.id, "Open" -%}{%- endif %}
+      <li>
+        <a href="{{ href }}" class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-wash sm:pl-[4.25rem] sm:pr-5">
+          <span class="min-w-0 flex-1 basis-48">
+            <span class="flex items-center gap-2">
+              <span class="truncate text-sm font-medium" title="{{ k.title }}">{{ k.title|display }}</span>
+              {% if k.job and k.job.status != "completed" %}{{ job_tag(k.job) }}{% endif %}
+            </span>
+            {% if k.cards.total %}
+            <span class="mt-1.5 flex items-center gap-3">
+              {{ card_meter(k.cards, "w-full max-w-56") }}
+              <span class="shrink-0 text-[12px] text-muted tabular-nums">{{ k.cards.approved }}/{{ k.cards.total }} approved</span>
+            </span>
+            {% else %}<span class="mt-0.5 block text-[12px] text-muted">No cards yet</span>{% endif %}
+          </span>
+          <span class="btn btn-sm {{ 'btn-primary' if cta.startswith('Review') else 'btn-outline' }} shrink-0" aria-hidden="true">{{ cta }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<label for="pdf-input" class="mt-10 flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed border-line-strong bg-white px-6 py-16 text-center transition-colors hover:border-accent/50 hover:bg-accent-soft/40" data-upload-target>
+  <span class="grid size-12 place-items-center rounded-xl bg-accent-soft text-accent">{{ icon("upload", "size-6") }}</span>
+  <span class="mt-4 font-medium">Drop a PDF here, or click to choose one</span>
+  <span class="mt-1 text-sm text-muted">Then pick a few pages, review the cards, and export them to Anki.</span>
+</label>
+{% endif %}
+
+<div class="dropzone-overlay" aria-hidden="true">
+  <div class="flex flex-col items-center rounded-2xl border-2 border-dashed border-accent bg-white/90 px-10 py-12 text-center shadow-xl">
+    <span class="grid size-12 place-items-center rounded-xl bg-accent-soft text-accent">{{ icon("upload", "size-6") }}</span>
+    <p class="mt-3 font-medium">Drop to upload</p>
+  </div>
 </div>
 {% endblock %}

@@ -1,63 +1,104 @@
 {#- Polled every 2 s while the job runs (app.js swaps this whole block). -#}
-{% from "_macros.html" import job_tag %}
+{% from "_macros.html" import job_tag, icon %}
 <div data-panel-active="{{ 1 if p.active else 0 }}">
 {% if not p.job %}
-  <p class="text-muted">This deck has not been processed yet.</p>
+  <div class="surface px-6 py-12 text-center">
+    <p class="font-medium">This deck has not been processed yet.</p>
+    <p class="hint mt-1">It starts as soon as the worker picks it up.</p>
+  </div>
 {% else %}
   {% set job = p.job %}
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-    {{ job_tag(job) }}
-    <p class="min-w-0 flex-1">
-      {% if job.status == "queued" %}Waiting to start.
-      {% elif job.status == "running" %}
-        {% if p.progress.cancel_requested %}Stopping…{% else %}{{ p.current.label }} <span class="text-muted">{{ p.current.done }}/{{ p.current.total }} · step {{ p.step_no }} of {{ p.stages|length }}</span>{% endif %}
-      {% elif job.status == "completed" %}{{ p.cards.total }} cards written{% if p.cards.to_review %}, {{ p.cards.to_review }} to review{% endif %}.
-      {% elif job.status == "failed" %}Stopped by an error. Finished work is kept.
-      {% else %}Stopped. Finished work is kept.{% endif %}
-    </p>
+  <section class="surface p-5 sm:p-6" aria-labelledby="status-h">
+    <div class="flex flex-wrap items-start gap-x-4 gap-y-3">
+      <div class="min-w-0 flex-1 basis-64">
+        {{ job_tag(job) }}
+        <h2 id="status-h" class="mt-2 text-lg font-semibold text-balance">
+          {% if job.status == "queued" %}Waiting to start
+          {% elif job.status == "running" %}{% if p.progress.cancel_requested %}Stopping…{% else %}{{ p.current.label }}…{% endif %}
+          {% elif job.status == "completed" %}{{ p.cards.total }} cards written{% if p.cards.to_review %}, {{ p.cards.to_review }} to review{% endif %}
+          {% elif job.status == "failed" %}Stopped by an error
+          {% else %}Stopped{% endif %}
+        </h2>
+        <p class="hint mt-0.5">
+          {% if job.status == "running" and not p.progress.cancel_requested %}Step {{ p.step_no }} of {{ p.stages|length }} · {{ p.current.done }}/{{ p.current.total }} done. You can close this tab; work continues.
+          {% elif job.status in ("failed", "cancelled") %}Finished work is kept. Resume to carry on where it stopped.
+          {% elif job.status == "completed" %}{% if p.cards.to_review %}Next: check each card against its source page.{% else %}All cards are reviewed.{% endif %}
+          {% else %}The worker will start it shortly.{% endif %}
+        </p>
+      </div>
+      <div class="flex shrink-0 flex-wrap gap-2">
+        {% if job.status in ("queued", "running") %}
+          <button class="btn btn-outline" data-post="/api/jobs/{{ job.id }}/cancel" {% if p.progress.cancel_requested %}disabled{% endif %}>{{ icon("stop", "size-3.5") }}Stop</button>
+        {% elif job.status in ("failed", "cancelled") %}
+          <button class="btn btn-outline" data-post="/api/jobs/{{ job.id }}/retry" data-reload>{{ icon("resume", "size-3.5") }}Resume</button>
+        {% endif %}
+        {% if p.cards.to_review and job.status == "completed" %}<a href="/decks/{{ deck.id }}/review" class="btn btn-primary">Review cards {{ icon("right", "size-3.5") }}</a>
+        {% elif p.cards.approved and job.status == "completed" %}<a href="/decks/{{ deck.id }}/export" class="btn btn-primary">{{ icon("download", "size-3.5") }}Export</a>{% endif %}
+      </div>
+    </div>
+
     {% if job.status in ("queued", "running") %}
-      <button class="btn btn-sm btn-outline" data-post="/api/jobs/{{ job.id }}/cancel" {% if p.progress.cancel_requested %}disabled{% endif %}>Stop</button>
-    {% elif job.status in ("failed", "cancelled") %}
-      <button class="btn btn-sm btn-outline" data-post="/api/jobs/{{ job.id }}/retry" data-reload>Resume</button>
+    <div class="meter mt-5" role="progressbar" aria-label="Overall progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p.pct }}">
+      <span class="rounded-full bg-accent" style="width: {{ p.pct }}%"></span>
+    </div>
     {% endif %}
-    {% if p.cards.to_review and job.status == "completed" %}<a href="/decks/{{ deck.id }}/review" class="btn btn-sm btn-primary">Review cards</a>{% endif %}
-  </div>
 
-  {% if job.status in ("queued", "running") %}
-  <div class="mt-4 h-1 overflow-hidden rounded-full bg-line" role="progressbar" aria-label="Overall progress"
-       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p.pct }}">
-    <div class="h-full rounded-full bg-accent transition-all" style="width: {{ p.pct }}%"></div>
-  </div>
-  {% if not p.worker_alive %}<p class="mt-3 text-sm text-[#c4554d]">The worker is not running. Start the app with <code>uv run python run.py</code>.</p>{% endif %}
-  {% endif %}
+    {% if p.stages and job.status != "completed" %}
+    <ol class="mt-5 grid gap-2 text-[13px] {{ 'sm:grid-cols-5' if p.stages|length == 5 }}" aria-label="Steps">
+      {% for s in p.stages %}
+      {%- set state = "done" if s.pct >= 100 else "failed" if s.failed else "now" if s is sameas p.current and job.status == "running" else "todo" -%}
+      <li class="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1.5">
+        <span class="grid size-5 shrink-0 place-items-center rounded-full
+          {{ 'bg-good text-white' if state == 'done' else 'bg-bad text-white' if state == 'failed' else 'bg-accent-soft text-accent' if state == 'now' else 'bg-hover text-faint' }}">
+          {% if state == "done" %}{{ icon("check", "size-3") }}{% elif state == "failed" %}{{ icon("x", "size-3") }}{% elif state == "now" %}<span class="spinner size-2.5 border-[1.5px]"></span>{% else %}<span class="text-[10px] font-semibold">{{ loop.index }}</span>{% endif %}
+        </span>
+        <span class="{{ 'text-ink font-medium' if state == 'now' else 'text-muted' }}">{{ s.label }}{% if s.total > 1 %} <span class="tabular-nums text-faint">{{ s.done }}/{{ s.total }}</span>{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
 
-  {% if job.error %}<p class="mt-3 text-sm text-[#c4554d]" role="alert">{{ job.error }}</p>{% endif %}
-  {% for f in p.progress.failed_steps %}<p class="mt-1 text-sm text-[#c4554d]">{{ f.item_key }}: {{ f.error }}</p>{% endfor %}
+    {% if job.status in ("queued", "running") and not p.worker_alive %}
+    <p class="callout callout-warn mt-5">{{ icon("alert", "size-4 mt-0.5") }}<span>The worker is not running, so nothing will happen. Start the app with <code class="font-mono text-[13px]">uv run python run.py</code>.</span></p>
+    {% endif %}
+    {% if job.error %}<p class="callout callout-bad mt-5" role="alert">{{ icon("alert", "size-4 mt-0.5") }}<span>{{ job.error }}</span></p>{% endif %}
+    {% for f in p.progress.failed_steps %}<p class="mt-2 text-sm text-bad"><span class="font-mono text-[12px]">{{ f.item_key }}</span>: {{ f.error }}</p>{% endfor %}
+  </section>
 
-  <p class="mt-4 text-sm text-muted">
-    {{ p.outcomes.converted }} questions turned into cards{% if p.outcomes.blocked %} · {{ p.outcomes.blocked }} blocked{% endif %}{% if p.outcomes.duplicate %} · {{ p.outcomes.duplicate }} duplicates{% endif %}
-    · {{ p.content_pages|length }} pages · about ${{ "%.2f"|format(p.progress.estimated_cost) }}
-  </p>
+  <dl class="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-4">
+    {% for value, label in [(p.outcomes.converted, "questions turned into cards"), (p.outcomes.blocked, "blocked"),
+                            (p.outcomes.duplicate, "duplicates"), ("$%.2f"|format(p.progress.estimated_cost), "est. cost · " ~ p.content_pages|length ~ " pages")] %}
+    <div class="bg-white px-4 py-3">
+      <dt class="sr-only">{{ label }}</dt>
+      <dd class="text-xl font-semibold tabular-nums">{{ value }}</dd>
+      <dd class="text-[12px] text-muted">{{ label }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
 
   {% if p.blocked %}
-  <h2 class="mt-10 text-lg font-semibold">Blocked <span class="font-normal text-muted">{{ p.blocked|length }}</span></h2>
-  <p class="mt-1 text-sm text-muted">These made no cards. Often the question or its answer is on a page you didn't include.</p>
-  <ul class="mt-3 divider">
-    {% for b in p.blocked %}
-    <li class="border-b border-line py-3">
-      <p class="text-sm"><span class="font-medium">{{ b.label }}</span>
-        {% for pg in b.pages %}<a class="ml-1 text-muted underline decoration-line underline-offset-2 hover:text-ink" target="_blank" rel="noopener" href="/documents/{{ deck.document_id }}/pages/{{ pg }}.png">p.{{ pg }}</a>{% endfor %}
-        <span class="text-muted">— {{ b.reason }}</span></p>
-      <p class="mt-0.5 truncate text-[13px] text-faint">{{ b.excerpt }}</p>
-    </li>
-    {% endfor %}
-  </ul>
+  <section class="mt-10" aria-labelledby="blocked-h">
+    <h2 id="blocked-h" class="flex items-center gap-2 font-semibold">Blocked <span class="tag tag-orange tabular-nums">{{ p.blocked|length }}</span></h2>
+    <p class="hint mt-0.5">These made no cards. Often the question or its answer is on a page you didn't include.</p>
+    <ul class="surface mt-3 divide-y divide-line">
+      {% for b in p.blocked %}
+      <li class="px-4 py-3 sm:px-5">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span class="font-semibold">{{ b.label }}</span>
+          {% for pg in b.pages %}<a class="tag tag-gray hover:bg-line hover:text-ink" target="_blank" rel="noopener" href="/documents/{{ deck.document_id }}/pages/{{ pg }}.png">p.{{ pg }}</a>{% endfor %}
+          <span class="basis-full text-muted sm:basis-auto">{{ b.reason }}</span>
+        </div>
+        <p class="mt-1 line-clamp-2 text-[13px] text-faint">{{ b.excerpt }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% endif %}
 
   {% if p.skipped %}
-  <details class="mt-6 group">
-    <summary class="btn -ml-2.5 cursor-pointer list-none text-muted"><span class="transition-transform group-open:rotate-90">›</span> Skipped {{ p.skipped|length }}</summary>
-    <ul class="mt-2 text-sm text-muted">{% for b in p.skipped %}<li class="py-1">{{ b.label }} · p.{{ b.pages|join(", ") }} · {{ b.reason }}</li>{% endfor %}</ul>
+  <details class="mt-6">
+    <summary class="btn btn-ghost -ml-3 list-none">{{ icon("right", "chev size-3.5") }}Skipped {{ p.skipped|length }}</summary>
+    <ul class="mt-2 space-y-1 text-sm text-muted">{% for b in p.skipped %}<li>{{ b.label }} · p.{{ b.pages|join(", ") }} · {{ b.reason }}</li>{% endfor %}</ul>
   </details>
   {% endif %}
 {% endif %}

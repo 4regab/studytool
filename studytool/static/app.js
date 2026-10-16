@@ -16,14 +16,37 @@ async function post(url, body = {}) {
   return data;
 }
 
+// Toasts rise in (CSS @starting-style) and fade out before removal. Timers pause while the tab is hidden.
 function toast(message, kind = "info") {
   const el = document.createElement("div");
-  el.className = "pointer-events-auto max-w-md rounded-md px-3 py-2 text-sm text-white shadow-lg " +
-    (kind === "error" ? "bg-[#c4554d]" : "bg-[#37352f]");
-  el.textContent = message;
-  if (kind === "error") el.setAttribute("role", "alert");
-  document.getElementById("toasts").append(el);
-  setTimeout(() => el.remove(), kind === "error" ? 6000 : 2500);
+  el.className = "toast" + (kind === "error" ? " toast-error" : "");
+  el.setAttribute("role", kind === "error" ? "alert" : "status");
+  const text = document.createElement("span");
+  text.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "Close";
+  close.setAttribute("aria-label", "Dismiss");
+  el.append(text, close);
+  const box = document.getElementById("toasts");
+  while (box.children.length >= 3) box.firstElementChild.remove();
+  box.append(el);
+
+  let left = kind === "error" ? 6000 : 3000, started = Date.now(), timer;
+  const dismiss = () => {
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", onVis);
+    el.dataset.leaving = "";
+    el.addEventListener("transitionend", () => el.remove(), { once: true });
+    setTimeout(() => el.remove(), 300); // in case no transition runs (reduced motion)
+  };
+  const run = () => { started = Date.now(); timer = setTimeout(dismiss, left); };
+  const onVis = () => {
+    if (document.hidden) { clearTimeout(timer); left -= Date.now() - started; } else run();
+  };
+  document.addEventListener("visibilitychange", onVis);
+  close.addEventListener("click", dismiss);
+  run();
 }
 
 const TAGS = {
@@ -53,8 +76,15 @@ window.addEventListener("resize", () => document.querySelectorAll("[data-autosiz
 document.querySelectorAll("form[data-busy]").forEach((form) => {
   form.addEventListener("submit", () => {
     const btn = form.querySelector("button:not([type=button])");
-    if (btn) { btn.disabled = true; btn.textContent = form.dataset.busy; }
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${form.dataset.busy}`; }
   });
+});
+
+// Downloads keep the page; say what happens next.
+document.querySelectorAll("form[data-download]").forEach((form) => {
+  form.addEventListener("submit", () => toast(form.action.endsWith(".apkg")
+    ? "Download started. Open the .apkg file to add the deck to Anki."
+    : "Download started. Import it in Anki with File › Import."));
 });
 
 // Upload starts as soon as a file is chosen, or dropped anywhere on the page.
@@ -63,13 +93,21 @@ if (upload) {
   const input = upload.querySelector("input[type=file]");
   const send = () => {
     if (!input.files.length) return;
-    upload.querySelector("[data-upload-label]").textContent = `Uploading ${input.files[0].name}…`;
+    const label = upload.querySelector("[data-upload-label]");
+    label.textContent = `Uploading ${input.files[0].name}…`;
+    label.closest("label").classList.add("pointer-events-none", "opacity-80");
     upload.submit();
   };
   input.addEventListener("change", send);
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  let depth = 0; // dragenter/dragleave fire for every child element
+  const dragging = (on) => document.documentElement.toggleAttribute("data-dragging", on);
+  document.addEventListener("dragenter", (e) => { if (hasFiles(e)) { depth++; dragging(true); } });
+  document.addEventListener("dragleave", (e) => { if (hasFiles(e) && --depth <= 0) { depth = 0; dragging(false); } });
   document.addEventListener("dragover", (e) => e.preventDefault());
   document.addEventListener("drop", (e) => {
     e.preventDefault();
+    depth = 0; dragging(false);
     const file = [...e.dataTransfer.files].find((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (!file) { toast("Drop a PDF file.", "error"); return; }
     const dt = new DataTransfer();
@@ -90,37 +128,50 @@ if (pagesInput) {
   const out = document.querySelector("[data-page-summary]");
   const update = () => {
     const pages = new Set();
+    const bad = (msg) => { out.textContent = msg; out.classList.add("text-bad"); pagesInput.setAttribute("aria-invalid", "true"); };
     for (const part of pagesInput.value.split(",").map((s) => s.trim()).filter(Boolean)) {
       const m = part.match(/^(\d+)\s*[-–]\s*(\d+)$|^(\d+)$/);
-      if (!m) { out.textContent = `"${part}" is not a page or range. Use e.g. 7-12, 22.`; out.classList.add("text-[#c4554d]"); return; }
+      if (!m) { bad(`"${part}" is not a page or range. Use e.g. 7-12, 22.`); return; }
       let [lo, hi] = m[3] ? [+m[3], +m[3]] : [+m[1], +m[2]];
       if (lo > hi) [lo, hi] = [hi, lo];
-      if (lo < 1 || hi > max) { out.textContent = `Pages go from 1 to ${max}.`; out.classList.add("text-[#c4554d]"); return; }
+      if (lo < 1 || hi > max) { bad(`Pages go from 1 to ${max}.`); return; }
       for (let p = lo; p <= hi; p++) pages.add(p);
     }
-    out.classList.remove("text-[#c4554d]");
+    out.classList.remove("text-bad");
+    pagesInput.removeAttribute("aria-invalid");
     out.textContent = pages.size
-      ? `${pages.size} page${pages.size === 1 ? "" : "s"}${pages.size > 30 ? " · consider a smaller test first" : ""}`
-      : "Start with a few pages to check quality.";
+      ? `${pages.size} page${pages.size === 1 ? "" : "s"} selected${pages.size > 30 ? " · consider a smaller test first" : ""}`
+      : "Ranges and single pages, e.g. 7-16, 22. Start small to check quality.";
   };
   pagesInput.addEventListener("input", update);
   update();
 }
 
-// Page browser on the document page; the image loads only when opened.
+// Page browser on the document page. "Add page" appends the page shown to the Pages field.
 const pager = document.querySelector("[data-pager]");
 if (pager) {
   const input = pager.querySelector("input");
   const img = pager.querySelector("[data-preview]");
+  const link = pager.querySelector("[data-preview-link]");
   const go = (n) => {
     n = Math.min(Math.max(1, n || 1), Number(pager.dataset.max));
     input.value = n;
-    img.src = `/documents/${pager.dataset.doc}/pages/${n}.png`;
+    const src = `/documents/${pager.dataset.doc}/pages/${n}.png`;
+    img.src = src; link.href = src;
     img.alt = `Page ${n}`;
+    pager.querySelector("[data-add-page-n]").textContent = n;
   };
-  pager.closest("details").addEventListener("toggle", (e) => { if (e.target.open && !img.src) go(1); });
   input.addEventListener("change", () => go(Number(input.value)));
   pager.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => go(Number(input.value) + Number(b.dataset.step))));
+  pager.querySelector("[data-add-page]")?.addEventListener("click", () => {
+    if (!pagesInput) return;
+    const n = input.value;
+    const parts = pagesInput.value.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!parts.includes(n)) parts.push(n);
+    pagesInput.value = parts.join(", ");
+    pagesInput.dispatchEvent(new Event("input"));
+    toast(`Page ${n} added to Pages.`);
+  });
 }
 
 // ---------- progress ----------
@@ -157,16 +208,19 @@ if (card) {
   const front = card.querySelector('[data-field="front"]');
   const back = card.querySelector('[data-field="back"]');
   const saved = { front: front.value, back: back.value };
+  const saveState = card.querySelector("[data-save-state]");
   let saving = Promise.resolve();
 
   // Edits save on their own: when a box loses focus, and before any action or move.
   function save() {
     if (front.value === saved.front && back.value === saved.back) return saving;
     const values = { front: front.value, back: back.value };
+    if (saveState) saveState.textContent = "Saving…";
     saving = saving.then(() => post(`/api/cards/${id}/edit`, values)).then(() => {
       Object.assign(saved, values);
+      if (saveState) saveState.textContent = "Saved";
     });
-    saving.catch((err) => toast(err.message, "error"));
+    saving.catch((err) => { if (saveState) saveState.textContent = ""; toast(err.message, "error"); });
     return saving;
   }
   [front, back].forEach((el) => el.addEventListener("blur", save));
@@ -176,13 +230,18 @@ if (card) {
     try { await save(); location.href = url; } catch { /* error already shown */ }
   }
 
+  let busy = false; // one action at a time, so a double press can't skip a card
   async function act(action) {
+    if (busy) return;
+    busy = true;
+    const btn = card.querySelector(`[data-action="${action}"]`);
+    if (btn) btn.disabled = true;
     try {
       await save();
       const data = await post(`/api/cards/${id}/${action}`);
-      if (action === "regenerate") { toast(data.message); return; }
+      if (action === "regenerate") { toast(data.message); busy = false; if (btn) btn.disabled = false; return; }
       location.href = card.dataset.next;
-    } catch (err) { toast(err.message, "error"); }
+    } catch (err) { toast(err.message, "error"); busy = false; if (btn) btn.disabled = false; }
   }
 
   card.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => act(b.dataset.action)));
@@ -206,7 +265,7 @@ if (card) {
   card.querySelectorAll("[data-show-page]").forEach((b) => b.addEventListener("click", () => {
     card.querySelector("[data-page-img]").src = b.dataset.showPage;
     card.querySelector("[data-page-link]").href = b.dataset.showPage;
-    card.querySelectorAll("[data-show-page]").forEach((x) => x.classList.toggle("bg-hover", x === b));
+    card.querySelectorAll("[data-show-page]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
   }));
   // On phones the page image is long; start with it folded so the buttons stay near the card.
   if (window.matchMedia("(max-width: 1023px)").matches) card.querySelector("[data-page-details]")?.removeAttribute("open");

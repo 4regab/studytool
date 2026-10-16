@@ -1,53 +1,154 @@
 /* Tailwind input. After changing templates or app.js, rebuild app.css with:
    npm install && npm run build:css
    app.css is committed, so running the app needs no Node.
-   Look: Notion-like. Off-black text, warm grays, thin lines, no shadows, one blue accent. */
+   Look: calm study app. Warm gray page, white surfaces with a hairline border, one blue accent.
+   Motion: short, ease-out, only where it explains a change. Nothing animates on keyboard review. */
 @import "tailwindcss";
 @source "../templates";
 @source "./app.js";
 
 @theme {
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --color-ink: #37352f;
-  --color-muted: #787774;
-  --color-faint: #a5a29a;
-  --color-line: #e9e9e7;
-  --color-hover: #f1f1ef;
-  --color-wash: #f7f7f5;
-  --color-accent: #2383e2;
-  --color-accent-dark: #0b6bcb;
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  --color-ink: #2b2a27;
+  --color-muted: #6d6b66;
+  --color-faint: #a19e97;
+  --color-line: #e7e5e0;
+  --color-line-strong: #d6d3cc;
+  --color-hover: #f1f0ec;
+  --color-wash: #f7f6f3;
+  --color-accent: #2b6cdf;
+  --color-accent-dark: #1f59c2;
+  --color-accent-soft: #e9f0fc;
+  --color-good: #2c7a4b;
+  --color-good-soft: #e2f1e7;
+  --color-warn: #8f5410;
+  --color-warn-soft: #fbefdb;
+  --color-bad: #c0443b;
+  --color-bad-soft: #fbe7e4;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 @layer base {
-  body { @apply bg-white font-sans text-[15px] leading-relaxed text-ink antialiased; }
-  ::selection { background: rgb(35 131 226 / 0.2); }
-  :focus-visible { outline: 2px solid rgb(35 131 226 / 0.5); outline-offset: 2px; border-radius: 4px; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply min-h-dvh bg-wash font-sans text-[15px] leading-relaxed text-ink antialiased; }
+  ::selection { background: rgb(43 108 223 / 0.18); }
+  :focus-visible { outline: 2px solid rgb(43 108 223 / 0.55); outline-offset: 2px; border-radius: 6px; }
+  summary::-webkit-details-marker { display: none; }
+  textarea, input, select, button { font: inherit; }
 }
 
 @layer components {
+  /* Buttons: a quick press-down so every click feels heard. */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-ink
-      transition-colors select-none hover:bg-hover disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap
+      text-ink select-none hover:bg-hover disabled:pointer-events-none disabled:opacity-40;
+    transition: transform 160ms var(--ease-out), background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
   }
-  .btn-outline { @apply border border-line; }
-  .btn-primary { @apply bg-accent text-white hover:bg-accent-dark; }
-  .btn-sm { @apply px-2 py-1 text-[13px]; }
+  .btn:active { transform: scale(0.97); }
+  .btn-outline { @apply border border-line-strong bg-white shadow-[0_1px_1px_rgb(0_0_0/0.04)] hover:border-faint hover:bg-white; }
+  .btn-primary {
+    @apply bg-accent text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.15),0_1px_2px_rgb(31_89_194/0.3)] hover:bg-accent-dark;
+  }
+  .btn-good { @apply bg-good text-white hover:bg-[#23663e]; }
+  .btn-ghost { @apply text-muted hover:text-ink; }
+  .btn-sm { @apply h-7 gap-1 rounded-md px-2 text-[13px]; }
+  .btn-lg { @apply h-10 px-4 text-[15px]; }
+  .btn-icon { @apply w-8 px-0; }
+  .btn-icon.btn-sm { @apply w-7; }
+
   .field {
-    @apply block w-full rounded-md border border-line bg-white px-2.5 py-1.5 text-sm text-ink
+    @apply block h-9 w-full rounded-lg border border-line-strong bg-white px-3 text-sm text-ink
       placeholder:text-faint hover:border-faint focus:border-accent focus:outline-none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
   }
+  .field:focus { box-shadow: 0 0 0 3px rgb(43 108 223 / 0.15); }
+  .field[aria-invalid="true"] { @apply border-bad; box-shadow: 0 0 0 3px rgb(192 68 59 / 0.12); }
   /* Borderless text that looks like page content until hovered or focused. */
   .plain {
-    @apply block w-full resize-none rounded-md bg-transparent px-1.5 py-1 -mx-1.5 text-ink
+    @apply block w-full resize-none rounded-lg bg-transparent px-2 py-1 -mx-2 text-ink
       placeholder:text-faint hover:bg-wash focus:bg-wash focus:outline-none;
+    transition: background-color 150ms ease, box-shadow 150ms ease;
   }
-  .label { @apply text-sm text-muted; }
-  .tag { @apply inline-flex items-center rounded px-1.5 py-px text-[12px] leading-5 whitespace-nowrap; }
-  .tag-gray { @apply bg-[#e3e2e0] text-[#32302c]; }
-  .tag-orange { @apply bg-[#fadec9] text-[#73400e]; }
-  .tag-green { @apply bg-[#dbeddb] text-[#1c3829]; }
-  .tag-red { @apply bg-[#ffe2dd] text-[#5d1715]; }
-  .tag-blue { @apply bg-[#d3e5ef] text-[#183347]; }
+  .plain:focus { box-shadow: 0 0 0 1px var(--color-line-strong); }
+  .label { @apply text-sm font-medium text-ink; }
+  .hint { @apply text-[13px] text-muted; }
+  .eyebrow { @apply text-[12px] font-medium tracking-wide text-faint uppercase; }
+
+  .surface { @apply rounded-xl border border-line bg-white shadow-[0_1px_2px_rgb(0_0_0/0.03)]; }
+
+  .tag { @apply inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[12px] leading-none font-medium whitespace-nowrap; }
+  .tag-gray { @apply bg-hover text-muted; }
+  .tag-orange { @apply bg-warn-soft text-warn; }
+  .tag-green { @apply bg-good-soft text-good; }
+  .tag-red { @apply bg-bad-soft text-bad; }
+  .tag-blue { @apply bg-accent-soft text-accent-dark; }
+
+  /* Pill controls: the view switch and the status filter. */
+  .segmented { @apply inline-flex rounded-lg bg-hover p-0.5; }
+  .segmented > :is(a, button) {
+    @apply inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted select-none hover:text-ink;
+    transition: transform 160ms var(--ease-out), color 150ms ease;
+  }
+  .segmented > :is(a, button):active { transform: scale(0.97); }
+  .segmented > [aria-current], .segmented > [aria-pressed="true"] { @apply bg-white text-ink shadow-[0_1px_2px_rgb(0_0_0/0.08)]; }
+  .chip {
+    @apply inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-white px-2.5 text-[13px] text-muted
+      hover:border-line-strong hover:text-ink;
+    transition: transform 160ms var(--ease-out), border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+  }
+  .chip:active { transform: scale(0.97); }
+  .chip[aria-current] { @apply border-ink bg-ink text-white; }
+  .chip .count { @apply tabular-nums opacity-70; }
+
+  .meter { @apply flex h-1.5 overflow-hidden rounded-full bg-hover; }
+  .meter > span { @apply h-full; transition: width 400ms linear; }
+
+  .kbd {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-current/20 px-1 font-mono text-[11px] leading-none opacity-70;
+  }
   .divider { @apply border-t border-line; }
-  .kbd { @apply rounded border border-line px-1 font-mono text-[11px] text-muted; }
+  .link { @apply underline decoration-line-strong underline-offset-2 hover:decoration-current; }
+
+  .callout { @apply flex gap-2.5 rounded-lg px-3 py-2.5 text-sm; }
+  .callout-warn { @apply bg-warn-soft text-warn; }
+  .callout-bad { @apply bg-bad-soft text-[#8e2a23]; }
+
+  .chev { transition: transform 150ms var(--ease-out); }
+  details[open] > summary .chev { transform: rotate(90deg); }
+
+  .spinner {
+    @apply inline-block size-3.5 rounded-full border-2 border-current border-r-transparent;
+    animation: spin 600ms linear infinite;
+  }
+
+  /* Toasts rise in from below and leave faster than they came. */
+  .toast {
+    @apply pointer-events-auto flex max-w-md items-center gap-3 rounded-xl bg-ink py-2.5 pr-2.5 pl-4 text-sm text-white
+      shadow-[0_8px_24px_rgb(0_0_0/0.18)];
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+    @starting-style { opacity: 0; transform: translateY(10px) scale(0.98); }
+  }
+  .toast[data-leaving] { opacity: 0; transform: translateY(4px) scale(0.98); transition-duration: 140ms; }
+  .toast-error { @apply bg-bad; }
+  .toast button { @apply rounded-md px-2 py-1 font-medium text-white/90 hover:bg-white/15 hover:text-white; }
+
+  /* Full-page drop target while a file is dragged over the documents page. */
+  .dropzone-overlay {
+    @apply pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-accent/8 p-6 opacity-0 backdrop-blur-[2px];
+    transition: opacity 150ms ease;
+  }
+  .dropzone-overlay > div { transform: scale(0.97); transition: transform 200ms var(--ease-out); }
+  html[data-dragging] .dropzone-overlay { opacity: 1; }
+  html[data-dragging] .dropzone-overlay > div { transform: none; }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active, .chip:active { transform: none; }
+  .toast, .toast[data-leaving] { transform: none; @starting-style { transform: none; } }
+  .chev, .dropzone-overlay > div { transition: none; }
+  .meter > span { transition: none; }
+  .spinner { animation-duration: 1.5s; }
 }

@@ -1,7 +1,11 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}Error · Flashcards{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold tracking-tight">{{ message }}</h1>
-<p class="mt-2 text-muted">Error {{ status }}</p>
-<a href="/" class="btn btn-outline mt-6">Back to documents</a>
+<div class="surface mx-auto mt-6 flex max-w-lg flex-col items-center px-6 py-14 text-center">
+  <span class="grid size-12 place-items-center rounded-full bg-bad-soft text-bad">{{ icon("alert", "size-6") }}</span>
+  <h1 class="mt-4 text-xl font-semibold text-balance">{{ message }}</h1>
+  <p class="hint mt-1">Error {{ status }}</p>
+  <a href="/" class="btn btn-outline mt-6">{{ icon("left", "size-3.5") }}Back to documents</a>
+</div>
 {% endblock %}
