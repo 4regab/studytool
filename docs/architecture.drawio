@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram id="arch" name="System architecture">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="PDF to Flashcards: system architecture" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="520" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Runs on one computer. Listens on 127.0.0.1 only, no login." style="text;html=1;fontSize=12;fontColor=#555555;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="520" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Launcher -->
+        <mxCell id="launcher" value="&lt;b&gt;Launcher&lt;/b&gt; (run.py)&lt;br&gt;applies migrations, starts both processes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1 -->
+        <mxCell id="user" value="&lt;b&gt;You&lt;/b&gt;&lt;br&gt;web browser (desktop or phone)" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="web" value="&lt;b&gt;Web app&lt;/b&gt; (web.py)&lt;br&gt;Starlette + Jinja pages, app.js&lt;br&gt;Documents, New deck, Progress,&lt;br&gt;Review, Export, Settings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="340" y="190" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="&lt;b&gt;SQLite&lt;/b&gt; (data/studytool.db)&lt;br&gt;documents, pages, decks,&lt;br&gt;source_items, cards, jobs,&lt;br&gt;job_steps, model_calls, exports" style="shape=cylinder3;size=15;boundedLbl=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="760" y="180" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="worker" value="&lt;b&gt;Background worker&lt;/b&gt; (worker.py)&lt;br&gt;one at a time (lease), claims next job,&lt;br&gt;resumes unfinished work on restart" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="190" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline container -->
+        <mxCell id="pipe" value="Pipeline (pipeline.py): each step is saved before the next one starts" style="swimlane;startSize=30;html=1;fillColor=#f5f5f5;strokeColor=#6c8ebf;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="400" width="1140" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="&lt;b&gt;1. Extract&lt;/b&gt;&lt;br&gt;extract.py&lt;br&gt;page text + images (PyMuPDF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="20" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="&lt;b&gt;2. Segment&lt;/b&gt;&lt;br&gt;segment.py&lt;br&gt;split each page into questions and info boxes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="180" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="&lt;b&gt;3. Link&lt;/b&gt;&lt;br&gt;link.py&lt;br&gt;match questions to answer-key entries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="340" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="&lt;b&gt;4. Normalize&lt;/b&gt;&lt;br&gt;normalize.py&lt;br&gt;decode answer codes into checked facts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="500" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;5. Generate&lt;/b&gt;&lt;br&gt;generate.py&lt;br&gt;write cards (prompt editable in Settings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="660" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="&lt;b&gt;6. Validate&lt;/b&gt;&lt;br&gt;validate.py&lt;br&gt;flag cards that need a closer look" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="820" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="&lt;b&gt;7. Dedupe&lt;/b&gt;&lt;br&gt;pipeline.py&lt;br&gt;mark repeated cards for review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="pipe">
+          <mxGeometry x="980" y="50" width="140" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Row 3 -->
+        <mxCell id="export" value="&lt;b&gt;Export&lt;/b&gt; (export.py)&lt;br&gt;approved cards only&lt;br&gt;.apkg (genanki) or CSV" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="anki" value="&lt;b&gt;Anki&lt;/b&gt;&lt;br&gt;Basic notes, one deck per export" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="files" value="&lt;b&gt;data/ folder&lt;/b&gt;&lt;br&gt;uploaded PDFs, page images,&lt;br&gt;settings.json (API key), exports" style="shape=cylinder3;size=12;boundedLbl=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="390" y="670" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ai" value="&lt;b&gt;AI provider&lt;/b&gt; via ai.py: DeepSeek, Google Gemini or OpenRouter&lt;br&gt;receives the text and images of the selected pages only" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="620" y="680" width="540" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="660" width="220" height="126" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="" style="rounded=0;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="30" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1t" value="App code, no AI" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="legend">
+          <mxGeometry x="50" y="28" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="" style="rounded=0;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="54" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2t" value="Step that calls the AI" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="legend">
+          <mxGeometry x="50" y="52" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="" style="rounded=0;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="78" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3t" value="Storage on this computer" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="legend">
+          <mxGeometry x="50" y="76" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="" style="rounded=0;dashed=1;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="102" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4t" value="Outside the app" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="legend">
+          <mxGeometry x="50" y="100" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: launcher -->
+        <mxCell id="e_l_web" value="starts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=block;endSize=8;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="launcher" target="web">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_l_worker" value="starts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=block;endSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="launcher" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_l_db" value="migrates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="launcher" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: row 1 -->
+        <mxCell id="e_user_web" value="HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;startArrow=block;startSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="web">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_web_db" value="read / write,&lt;br&gt;queue jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;startArrow=block;startSize=8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="web" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_db" value="claim job,&lt;br&gt;save each step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;startArrow=block;startSize=8;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="worker" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_pipe" value="runs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.7895;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="worker" target="pipe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: pipeline steps -->
+        <mxCell id="e_s1_s2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3_s4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s4_s5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_s6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s6_s7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=6;" edge="1" parent="pipe" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: pipeline to outside -->
+        <mxCell id="e_s1_files" value="read PDF,&lt;br&gt;save page images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;startArrow=block;startSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s1" target="files">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2_ai" value="AI call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#d79b00;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.0556;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s2" target="ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s5_ai" value="AI call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;strokeColor=#d79b00;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.9444;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="s5" target="ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: export path -->
+        <mxCell id="e_web_export" value="Export page" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.0833;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="web" target="export">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_export_anki" value="download, then import" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endSize=8;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="export" target="anki">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
