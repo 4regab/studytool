@@ -1,7 +1,7 @@
 # PDF to Flashcards
 
-Turns study PDFs into standalone question-and-answer cards and exports them as a
-`front,back` CSV for Anki. Runs on your own computer with Python and SQLite.
+Turns study PDFs into standalone question-and-answer cards and exports them for Anki
+(`.apkg` deck file or `front,back` CSV). Runs on your own computer with Python and SQLite.
 
 ## Setup
 
@@ -27,12 +27,44 @@ Data lives in `data/` (set `STUDYTOOL_DATA_DIR` to move it). Use `STUDYTOOL_PORT
 
 ## Use
 
-1. **Documents:** upload a PDF. Pick the content pages and, if the answers are elsewhere,
-   the answer-key pages. Start with a small pilot range (2-5 pages) to check quality and cost.
-2. **Processing:** watch progress. Cancel or retry failed steps here.
-3. **Review:** edit, approve, or reject cards in the table, one at a time or in bulk.
-   Click a card's page number to open its source page.
-4. **Export:** download an Anki deck file (`.apkg`) or a CSV. Both contain approved cards only.
+Screenshots below use the small sample PDF from `fixtures/`.
+
+1. **Settings:** pick an AI provider, paste your API key and choose a model. You can also edit the
+   prompt that writes the cards. Click **Test connection** to check the key works.
+
+   ![Settings page](docs/screenshots/6-settings.png)
+
+2. **Documents:** click **Upload PDF**, or drop a PDF anywhere on the page. Each document lists its
+   decks with a progress bar and a button for the next step.
+
+   ![Documents page](docs/screenshots/1-documents.png)
+
+3. **New deck:** open a document, name the deck and enter the pages to use, e.g. `7-16, 22`.
+   If the answers are printed elsewhere, add the answer-key pages. Use the page browser on the
+   right to find pages; **Add page** puts the page you see into the Pages box. Start with 2-5 pages
+   to check quality and cost.
+
+   ![New deck form](docs/screenshots/2-new-deck.png)
+
+4. **Progress:** watch the steps run. You can close the tab; work continues. Stop or resume here.
+   Questions that made no cards are listed with the reason.
+
+   ![Progress page](docs/screenshots/3-progress.png)
+
+5. **Review:** edit any question or answer in place; edits save when you click away. Approve (✓) or
+   reject (✕) one card, tick several and approve them together, or approve everything still to
+   review. Filter by status, question type or page. Click a page number to open the source page.
+   Flagged cards show their warning under the row.
+
+   ![Review table](docs/screenshots/4-review.png)
+
+   It works on a phone too:
+
+   <img src="docs/screenshots/7-review-phone.png" alt="Review table on a phone" width="300">
+
+6. **Export:** download an Anki deck file (`.apkg`) or a CSV. Both contain approved cards only.
+
+   ![Export page](docs/screenshots/5-export.png)
 
 ## Import into Anki
 
@@ -64,3 +96,33 @@ uv run python -c "from studytool import db; db.backup(db.connect(), 'backup.db')
   reviewable and exportable offline.
 - Token counts and costs shown in the app are estimates.
 - Run the tests with `uv run pytest -q`.
+
+## Folders
+
+```
+studytool/            the app's Python code
+  web.py              web pages and the small JSON actions they call
+  worker.py           background worker that runs processing jobs
+  pipeline.py         the steps of a job: read pages, find questions, match answers, write cards
+  extract.py          reads text and images from PDF pages
+  segment.py          splits a page into questions (AI)
+  link.py             matches questions to answer-key entries
+  normalize.py        turns each question into checked facts
+  generate.py         writes cards from those facts (AI, editable prompt)
+  validate.py         flags cards that need a closer look
+  ai.py               talks to DeepSeek, Gemini or OpenRouter
+  settings.py         provider, key, model and prompt chosen on the Settings page
+  cards.py, jobs.py, documents.py, export.py, db.py, schemas.py, config.py   data and helpers
+  templates/          HTML pages (Jinja)
+  static/             app.css, app.js and the Tailwind source (tailwind.in.css)
+  migrations/         SQL that creates the database tables
+tests/                automated tests (no network, no real API calls)
+fixtures/             sample PDFs used by the tests
+docs/screenshots/     the pictures in this README
+data/                 your database, uploaded PDFs, page images, exports and settings.json
+                      (created on first run, never committed)
+run.py                starts the web app and the worker
+app.py                old Streamlit screen (`run.py --streamlit`), kept until the new one is confirmed
+package.json          only for rebuilding app.css with Tailwind (`npm run build:css`)
+pyproject.toml, uv.lock   Python dependencies
+```

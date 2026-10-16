@@ -55,16 +55,6 @@
           {% else %}A DeepSeek model name, e.g. <code class="font-mono text-[12px]">deepseek-flash</code>. Scanned pages need a model that reads images.{% endif %}
         </p>
       </div>
-      <fieldset>
-        <legend class="label">Price per million tokens <span class="font-normal text-muted">· for cost estimates only</span></legend>
-        <div class="mt-1.5 grid grid-cols-2 gap-3 sm:max-w-sm">
-          <label class="block"><span class="hint">Input, $</span>
-            <input name="price_in_{{ p.id }}" inputmode="decimal" class="field mt-1 tabular-nums" value="{{ p.price.in }}"></label>
-          <label class="block"><span class="hint">Output, $</span>
-            <input name="price_out_{{ p.id }}" inputmode="decimal" class="field mt-1 tabular-nums" value="{{ p.price.out }}"></label>
-        </div>
-        <p class="hint mt-1.5">Leave at 0 if you don't know them. Cost estimates then show $0.00.</p>
-      </fieldset>
     </div>
   </section>
   {% endfor %}
